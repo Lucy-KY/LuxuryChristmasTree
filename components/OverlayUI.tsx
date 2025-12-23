@@ -26,7 +26,7 @@ const OverlayUI: React.FC<OverlayUIProps> = ({ treeState, onToggleState, onPhoto
       {/* Top Header */}
       <div className={`flex justify-between items-start pointer-events-auto transition-opacity duration-700 ${isPhotoFocused ? 'opacity-0' : 'opacity-100'}`}>
         <div className="space-y-1">
-          <h1 className="text-5xl font-pinyon metallic-text">Marry Christmas</h1>
+          <h1 className="text-5xl font-pinyon metallic-text">Merry Christmas</h1>
           <p className="text-xs font-cinzel tracking-[0.3em] text-yellow-500/80 uppercase">A Winter Light by Kairo</p>
         </div>
         
@@ -72,7 +72,7 @@ const OverlayUI: React.FC<OverlayUIProps> = ({ treeState, onToggleState, onPhoto
       {/* Bottom Interface */}
       <div className={`flex justify-between items-end pointer-events-auto transition-opacity duration-700 ${isPhotoFocused ? 'opacity-0' : 'opacity-100'}`}>
         <div className="space-y-2">
-          {/* Removed English text and line from bottom-left corner as requested */}
+          {/* Bottom left intentionally minimal for the hand tracker view */}
         </div>
 
         <div className="text-right space-y-2">

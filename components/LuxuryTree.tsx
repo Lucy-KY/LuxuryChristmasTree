@@ -1,6 +1,6 @@
 
 import React, { useMemo, useRef, useEffect, useState } from 'react';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { TreeState, OrnamentData } from '../types';
 import { COLORS, PARTICLE_COUNTS, TREE_PARAMS } from '../constants';
@@ -33,84 +33,7 @@ const StarTopGeometry = () => {
   return <extrudeGeometry args={[shape, { depth: 0.2, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05 }]} />;
 };
 
-const TRANSITION_DURATION = 1.5;
-
-const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void }> = ({ url, index, onDismiss }) => {
-  const texture = useTexture(url);
-  const { camera } = useThree();
-  const groupRef = useRef<THREE.Group>(null!);
-  const [progress, setProgress] = useState(0);
-  const [isClosing, setIsClosing] = useState(false);
-
-  const startPos = useMemo(() => {
-    const angle = (index * 1.5) + Math.PI;
-    const h = 0.25 + (index * 0.12) % 0.55;
-    const r = TREE_PARAMS.BASE_RADIUS * Math.pow(1 - h, 0.85) * 1.1;
-    return new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
-  }, [index]);
-
-  const aspect = useMemo(() => {
-    const img = texture.image as any;
-    if (img && img.width && img.height) {
-      return img.width / img.height;
-    }
-    return 1;
-  }, [texture]);
-
-  useFrame((state, delta) => {
-    if (!groupRef.current) return;
-
-    if (!isClosing) {
-      if (progress < 1) setProgress(Math.min(1, progress + delta / TRANSITION_DURATION));
-    } else {
-      if (progress > 0) {
-        setProgress(Math.max(0, progress - delta / TRANSITION_DURATION));
-      } else {
-        onDismiss();
-      }
-    }
-
-    const t = isClosing 
-      ? Math.pow(progress, 4) 
-      : 1 - Math.pow(1 - progress, 4);
-
-    const targetPos = new THREE.Vector3(0, 0, -5);
-    targetPos.applyQuaternion(camera.quaternion);
-    targetPos.add(camera.position);
-
-    groupRef.current.position.lerpVectors(startPos, targetPos, t);
-    const lookAtQuat = camera.quaternion.clone();
-    groupRef.current.quaternion.slerp(lookAtQuat, t);
-
-    const s = THREE.MathUtils.lerp(1.2, 3.2, t);
-    groupRef.current.scale.set(s * aspect, s, 1);
-  });
-
-  const handleDismiss = (e: any) => {
-    e.stopPropagation();
-    setIsClosing(true);
-  };
-
-  return (
-    <group ref={groupRef} onClick={handleDismiss} renderOrder={9999}>
-      <mesh>
-        <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial map={texture} transparent opacity={1} depthTest={false} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh position={[0, 0, -0.01]}>
-        <planeGeometry args={[1.05, 1.05]} />
-        <meshPhysicalMaterial 
-          color={COLORS.GOLD} 
-          metalness={1.0} 
-          roughness={0.02} 
-          emissive={COLORS.GOLD} 
-          emissiveIntensity={1.5}
-          depthTest={false}
-        />
-      </mesh>
-    </group>
-  );
-};
+export const TRANSITION_DURATION = 1.5;
 
 const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focusedPhoto, onFocusPhoto }) => {
   const pointsRef = useRef<THREE.Points>(null!);
@@ -230,30 +153,19 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       const dist = Math.pow(Math.random(), 0.5) * 18; 
       const x = Math.cos(angle) * dist;
       const z = Math.sin(angle) * dist;
-      
-      // Calculate topography using multi-layered sine noise for a "hilly" look
-      // Layer 1: Large scale mountains
       const layer1 = Math.sin(x * 0.2) * Math.cos(z * 0.2) * 1.5;
-      // Layer 2: Medium scale ridges
       const layer2 = Math.sin(x * 0.5 + z * 0.3) * 0.6;
-      // Layer 3: Small scale drifts
       const layer3 = Math.sin(x * 1.2) * Math.sin(z * 1.1) * 0.2;
-      
       const topoHeight = layer1 + layer2 + layer3;
-      
       snowBasePos[i3] = x;
-      snowBasePos[i3 + 1] = -2.5; // Base level
+      snowBasePos[i3 + 1] = -2.5; 
       snowBasePos[i3 + 2] = z;
-      
       const chaosPhi = Math.random() * Math.PI * 2;
       const chaosR = 15 + Math.random() * 10;
       snowBaseChaos[i3] = Math.cos(chaosPhi) * chaosR;
       snowBaseChaos[i3 + 1] = -18 + Math.random() * 5;
       snowBaseChaos[i3 + 2] = Math.sin(chaosPhi) * chaosR;
       snowBaseGrowth[i] = 0;
-      
-      // Store the combined topographical factor (normalized-ish)
-      // We use this to influence how much snow "sticks" and the max height of the hill at this point
       snowBaseVariation[i] = topoHeight; 
     }
 
@@ -339,25 +251,17 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       const x = particles.snowBase.pos[i3];
       const z = particles.snowBase.pos[i3+2];
       const r = Math.sqrt(x*x + z*z);
-      
-      // The hill's height at this specific point
       const mountainHeight = particles.snowBase.variation[i];
-      // Close to the tree, snow accumulates more in the hills
       const proximityFactor = Math.max(0, 1.0 - (r / 20.0));
       const driftMaxHeight = (mountainHeight + 1.5) * proximityFactor + 0.5;
-      
       if (newTransition > 0.7 && Math.random() < 0.02) {
         growthArr[i] = Math.min(driftMaxHeight, growthArr[i] + delta * 0.8);
       }
-      
-      // Subtle melting and shifting
       if (growthArr[i] > driftMaxHeight) {
         growthArr[i] -= delta * 0.1;
       }
-
       const noise = Math.sin(time * 0.8 + i * 0.05) * 0.02 * Math.min(1.0, growthArr[i]);
       const targetY = particles.snowBase.pos[i3+1] + growthArr[i] + noise;
-      
       snowPosArr[i3] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3], particles.snowBase.pos[i3], newTransition);
       snowPosArr[i3 + 1] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3 + 1], targetY, newTransition);
       snowPosArr[i3 + 2] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3 + 2], particles.snowBase.pos[i3 + 2], newTransition);
@@ -453,14 +357,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
           </mesh>
         </Float>
       </group>
-
-      {focusedPhoto && (
-        <FocusedPhoto 
-          url={focusedPhoto} 
-          index={photos.indexOf(focusedPhoto)} 
-          onDismiss={() => onFocusPhoto(null)} 
-        />
-      )}
 
       <GoldDust transition={transition} />
       <Snowfall />
@@ -642,7 +538,7 @@ const PhotoOrnament: React.FC<{ url: string; index: number; isFocused: boolean; 
   const data = useMemo<OrnamentData>(() => {
     const angle = (index * 1.5) + Math.PI;
     const h = 0.25 + (index * 0.12) % 0.55;
-    const r = TREE_PARAMS.BASE_RADIUS * Math.pow(1 - h, 0.85) * 1.1;
+    const r = TREE_RADIUS_FACTOR(h);
     return {
       id: `photo-${index}`,
       type: 'photo',
@@ -676,5 +572,7 @@ const PhotoOrnament: React.FC<{ url: string; index: number; isFocused: boolean; 
     </group>
   );
 };
+
+export const TREE_RADIUS_FACTOR = (h: number) => TREE_PARAMS.BASE_RADIUS * Math.pow(1 - h, 0.85) * 1.1;
 
 export default LuxuryTree;
