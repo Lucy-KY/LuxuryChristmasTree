@@ -33,6 +33,66 @@ const StarTopGeometry = () => {
   return <extrudeGeometry args={[shape, { depth: 0.2, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05 }]} />;
 };
 
+const Gift: React.FC<{ color: string }> = ({ color }) => {
+  const scale = 0.9;
+  return (
+    <group>
+      <mesh>
+        <boxGeometry args={[0.26 * scale, 0.26 * scale, 0.26 * scale]} />
+        <meshPhysicalMaterial 
+          color={color} 
+          roughness={0.12} 
+          metalness={0.8} 
+          sheen={1.0}
+          sheenRoughness={0.1}
+          sheenColor={color}
+          clearcoat={1.0}
+          clearcoatRoughness={0.02}
+          reflectivity={1.0}
+          emissive={color}
+          emissiveIntensity={0.6} 
+        />
+      </mesh>
+      
+      <mesh position={[0, 0, 0]}>
+        <boxGeometry args={[0.27 * scale, 0.045 * scale, 0.271 * scale]} />
+        <meshPhysicalMaterial 
+          color={COLORS.GOLD} 
+          metalness={1.0} 
+          roughness={0.01} 
+          clearcoat={1.0}
+          emissive={COLORS.GOLD} 
+          emissiveIntensity={1.5} 
+        />
+      </mesh>
+      
+      <mesh position={[0, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <boxGeometry args={[0.271 * scale, 0.045 * scale, 0.27 * scale]} />
+        <meshPhysicalMaterial 
+          color={COLORS.GOLD} 
+          metalness={1.0} 
+          roughness={0.01} 
+          clearcoat={1.0}
+          emissive={COLORS.GOLD} 
+          emissiveIntensity={1.5} 
+        />
+      </mesh>
+
+      <mesh position={[0, 0.14 * scale, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusKnotGeometry args={[0.065 * scale, 0.012 * scale, 128, 16, 2, 3]} />
+        <meshPhysicalMaterial 
+          color={COLORS.GOLD} 
+          metalness={1.0} 
+          roughness={0.01} 
+          clearcoat={1.0}
+          emissive={COLORS.GOLD} 
+          emissiveIntensity={3.0}
+        />
+      </mesh>
+    </group>
+  );
+};
+
 export const TRANSITION_DURATION = 1.5;
 
 const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focusedPhoto, onFocusPhoto }) => {
@@ -66,7 +126,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
     const lightEmerald = new THREE.Color(COLORS.LIGHT_EMERALD);
     const brownColor = new THREE.Color(COLORS.BROWN);
 
-    // Foliage Generation
     for (let i = 0; i < PARTICLE_COUNTS.FOLIAGE; i++) {
       const i3 = i * 3;
       const hPct = Math.random();
@@ -75,28 +134,33 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       const tierProgress = (y % tierSize) / tierSize;
       const baseR = TREE_PARAMS.BASE_RADIUS * Math.pow(1 - hPct, 0.95);
       const sawtooth = 1 - (tierProgress * TREE_PARAMS.SAWTOOTH_DEPTH);
-      const spread = (0.3 + 0.7 * Math.pow(Math.random(), 1.5));
-      const r = (baseR * sawtooth + Math.sin(hPct * 50 + (i % 30)) * 0.12) * spread;
+      
+      const spread = (0.2 + 0.8 * Math.pow(Math.random(), 1.2));
+      const r = (baseR * sawtooth + Math.sin(hPct * 50 + (i % 30)) * 0.15) * spread;
+      
       const angle = Math.random() * Math.PI * 2;
       foliagePos[i3] = Math.cos(angle) * r;
       foliagePos[i3 + 1] = y;
       foliagePos[i3 + 2] = Math.sin(angle) * r;
+      
       const chaosPhi = Math.acos(Math.min(1, Math.max(-1, 2 * Math.random() - 1)));
       const chaosTheta = Math.random() * Math.PI * 2;
-      const chaosR = 9 + Math.random() * 5;
+      const chaosR = 12 + Math.random() * 8;
       foliageChaos[i3] = chaosR * Math.sin(chaosPhi) * Math.cos(chaosTheta);
       foliageChaos[i3 + 1] = chaosR * Math.sin(chaosPhi) * Math.sin(chaosTheta) + 6;
       foliageChaos[i3 + 2] = chaosR * Math.cos(chaosPhi);
+      
       const colorRoll = Math.random();
-      let c = emeraldColor;
-      if (colorRoll > 0.96) c = goldColor;
-      else if (colorRoll > 0.75) c = lightEmerald;
+      let c;
+      if (colorRoll > 0.985) c = goldColor;
+      else if (colorRoll > 0.75) c = lightEmerald; 
+      else c = emeraldColor;
+      
       foliageColors[i3] = c.r;
       foliageColors[i3 + 1] = c.g;
       foliageColors[i3 + 2] = c.b;
     }
 
-    // Trunk Generation
     for (let i = 0; i < PARTICLE_COUNTS.TRUNK; i++) {
       const i3 = i * 3;
       const y = (Math.random() * 2.2) - 1.5; 
@@ -125,7 +189,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       trunkColors[i3 + 2] = brownColor.b;
     }
 
-    // Ribbon Generation
     const perRibbon = PARTICLE_COUNTS.RIBBON / 2;
     for (let rIdx = 0; rIdx < 2; rIdx++) {
       const offset = rIdx * Math.PI;
@@ -146,7 +209,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       }
     }
 
-    // Hilly Snow Base Generation
     for (let i = 0; i < PARTICLE_COUNTS.SNOW_BASE; i++) {
       const i3 = i * 3;
       const angle = Math.random() * Math.PI * 2;
@@ -179,22 +241,33 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
 
   const ornaments = useMemo(() => {
     const list: OrnamentData[] = [];
-    const count = 60;
-    const types: OrnamentData['type'][] = ['sphere', 'box', 'heptagram', 'star'];
+    const count = 300; 
+    const types: OrnamentData['type'][] = ['sphere', 'box', 'box', 'box', 'heptagram']; 
+    
+    const giftPalette = ['#FF8C00', '#32CD32', '#00BFFF', '#BA55D3', '#FFD1DC', '#00CED1']; 
+    const classicPalette = [COLORS.GOLD, '#F5F5F5', '#FF1493', '#1E90FF'];
+
     for (let i = 0; i < count; i++) {
       const type = types[i % types.length];
       let weight = 0.5; 
-      if (type === 'box') weight = 0.8;
-      const hPct = 0.2 + Math.random() * 0.65; 
+      let color = classicPalette[i % classicPalette.length];
+
+      if (type === 'box') {
+        weight = 0.95;
+        color = giftPalette[i % giftPalette.length];
+      }
+
+      const hPct = 0.1 + Math.random() * 0.85; 
       const y = hPct * TREE_PARAMS.HEIGHT;
       const baseR = TREE_PARAMS.BASE_RADIUS * Math.pow(1 - hPct, 0.85);
       const angle = Math.random() * Math.PI * 2;
-      const r = baseR * 0.92;
+      const r = baseR * 0.98;
+
       list.push({
         id: `orn-${i}`,
         type,
         position: [Math.cos(angle) * r, y, Math.sin(angle) * r],
-        color: i % 4 === 0 ? COLORS.GOLD : i % 3 === 0 ? COLORS.SILVER : COLORS.DEEP_RED,
+        color,
         weight
       });
     }
@@ -210,7 +283,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
 
     const time = stateClock.clock.elapsedTime;
 
-    // Foliage
     const foliagePos = pointsRef.current.geometry.attributes.position.array as Float32Array;
     for (let i = 0; i < PARTICLE_COUNTS.FOLIAGE; i++) {
       const i3 = i * 3;
@@ -220,7 +292,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
     }
     pointsRef.current.geometry.attributes.position.needsUpdate = true;
 
-    // Trunk
     const trunkPos = trunkRef.current.geometry.attributes.position.array as Float32Array;
     for (let i = 0; i < PARTICLE_COUNTS.TRUNK; i++) {
       const i3 = i * 3;
@@ -230,38 +301,28 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
     }
     trunkRef.current.geometry.attributes.position.needsUpdate = true;
 
-    // Ribbon
     const ribbonPosArr = ribbonPointsRef.current.geometry.attributes.position.array as Float32Array;
     for (let i = 0; i < PARTICLE_COUNTS.RIBBON; i++) {
       const i3 = i * 3;
       ribbonPosArr[i3] = THREE.MathUtils.lerp(particles.ribbon.chaos[i3], particles.ribbon.pos[i3], newTransition);
       ribbonPosArr[i3 + 1] = THREE.MathUtils.lerp(particles.ribbon.chaos[i3 + 1], particles.ribbon.pos[i3 + 1], newTransition);
       ribbonPosArr[i3 + 2] = THREE.MathUtils.lerp(particles.ribbon.chaos[i3 + 2], particles.ribbon.pos[i3 + 2], newTransition);
-      ribbonPosArr[i3] += Math.sin(time * 2.8 + i) * 0.035;
-      ribbonPosArr[i3 + 1] += Math.cos(time * 2.8 + i) * 0.035;
     }
     ribbonPointsRef.current.geometry.attributes.position.needsUpdate = true;
 
-    // Mountainous Snow Base Update
     const snowPosArr = snowBaseRef.current.geometry.attributes.position.array as Float32Array;
     const growthArr = snowBaseRef.current.geometry.attributes.aGrowth.array as Float32Array;
-    
     for (let i = 0; i < PARTICLE_COUNTS.SNOW_BASE; i++) {
       const i3 = i * 3;
       const x = particles.snowBase.pos[i3];
       const z = particles.snowBase.pos[i3+2];
       const r = Math.sqrt(x*x + z*z);
-      const mountainHeight = particles.snowBase.variation[i];
       const proximityFactor = Math.max(0, 1.0 - (r / 20.0));
-      const driftMaxHeight = (mountainHeight + 1.5) * proximityFactor + 0.5;
+      const driftMaxHeight = (particles.snowBase.variation[i] + 1.5) * proximityFactor + 0.5;
       if (newTransition > 0.7 && Math.random() < 0.02) {
         growthArr[i] = Math.min(driftMaxHeight, growthArr[i] + delta * 0.8);
       }
-      if (growthArr[i] > driftMaxHeight) {
-        growthArr[i] -= delta * 0.1;
-      }
-      const noise = Math.sin(time * 0.8 + i * 0.05) * 0.02 * Math.min(1.0, growthArr[i]);
-      const targetY = particles.snowBase.pos[i3+1] + growthArr[i] + noise;
+      const targetY = particles.snowBase.pos[i3+1] + growthArr[i];
       snowPosArr[i3] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3], particles.snowBase.pos[i3], newTransition);
       snowPosArr[i3 + 1] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3 + 1], targetY, newTransition);
       snowPosArr[i3 + 2] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3 + 2], particles.snowBase.pos[i3 + 2], newTransition);
@@ -269,7 +330,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
     snowBaseRef.current.geometry.attributes.position.needsUpdate = true;
     snowBaseRef.current.geometry.attributes.aGrowth.needsUpdate = true;
 
-    // Ornaments swaying
     if (ornamentsGroupRef.current) {
       ornamentsGroupRef.current.children.forEach((child, idx) => {
         const orn = child.userData as OrnamentData;
@@ -302,7 +362,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNTS.FOLIAGE} array={new Float32Array(PARTICLE_COUNTS.FOLIAGE * 3)} itemSize={3} />
           <bufferAttribute attach="attributes-color" count={PARTICLE_COUNTS.FOLIAGE} array={particles.foliage.colors} itemSize={3} />
         </bufferGeometry>
-        <pointsMaterial size={0.038} vertexColors transparent opacity={0.95} blending={THREE.AdditiveBlending} />
+        <pointsMaterial size={0.048} vertexColors transparent opacity={0.85} blending={THREE.AdditiveBlending} depthWrite={false} />
       </points>
 
       <points ref={trunkRef}>
@@ -345,15 +405,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
         <Float speed={5} rotationIntensity={0.5} floatIntensity={1.5}>
           <mesh ref={starRef} position={[0, TREE_PARAMS.HEIGHT + 0.6, 0]}>
             <StarTopGeometry />
-            <meshPhysicalMaterial 
-              color="#ffe8f1" 
-              emissive="#ffe8f1" 
-              emissiveIntensity={15} 
-              metalness={0.8} 
-              roughness={0.1}
-              transmission={0.3} 
-              thickness={1} 
-            />
+            <meshPhysicalMaterial color="#ffe8f1" emissive="#ffe8f1" emissiveIntensity={15} metalness={0.9} roughness={0.1} transmission={0.4} thickness={1.5} clearcoat={1.0} />
           </mesh>
         </Float>
       </group>
@@ -432,10 +484,8 @@ const Snowfall: React.FC = () => {
         pos.y = mod(pos.y - uTime * aSpeed * 1.8, 30.0) - 10.0;
         pos.x += sin(uTime * 0.4 + aOffset) * 2.2;
         pos.z += cos(uTime * 0.3 + aOffset) * 2.2;
-        
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
         gl_Position = projectionMatrix * mvPosition;
-        
         float hAtten = smoothstep(-10.0, 15.0, pos.y);
         gl_PointSize = aSize * (380.0 / -mvPosition.z) * hAtten;
         vOpacity = hAtten * 0.88;
@@ -484,22 +534,17 @@ const Snowfall: React.FC = () => {
         <bufferAttribute attach="attributes-aSpeed" count={PARTICLE_COUNTS.SNOW} array={data.speed} itemSize={1} />
         <bufferAttribute attach="attributes-aOffset" count={PARTICLE_COUNTS.SNOW} array={data.offset} itemSize={1} />
       </bufferGeometry>
-      <shaderMaterial 
-        args={[shader]} 
-        transparent 
-        depthWrite={false} 
-        blending={THREE.AdditiveBlending} 
-      />
+      <shaderMaterial args={[shader]} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
     </points>
   );
 };
 
-const HeptagramGeometry = () => {
+const HeptagramGeometry = ({ scale = 1 }) => {
   const shape = useMemo(() => {
     const s = new THREE.Shape();
     const points = 7;
-    const outerRadius = 0.25;
-    const innerRadius = 0.12;
+    const outerRadius = 0.25 * scale;
+    const innerRadius = 0.12 * scale;
     for (let i = 0; i <= points * 2; i++) {
       const radius = i % 2 === 0 ? outerRadius : innerRadius;
       const angle = (i / points) * Math.PI;
@@ -509,27 +554,28 @@ const HeptagramGeometry = () => {
       else s.lineTo(x, y);
     }
     return s;
-  }, []);
-  return <extrudeGeometry args={[shape, { depth: 0.05, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02 }]} />;
+  }, [scale]);
+  return <extrudeGeometry args={[shape, { depth: 0.05 * scale, bevelEnabled: true, bevelThickness: 0.02 * scale, bevelSize: 0.02 * scale }]} />;
 };
 
 const Ornament: React.FC<{ data: OrnamentData }> = ({ data }) => {
+  const scale = 0.9;
   return (
-    <mesh position={data.position} userData={data}>
-      {data.type === 'sphere' && <sphereGeometry args={[0.18, 32, 32]} />}
-      {data.type === 'box' && <boxGeometry args={[0.26, 0.26, 0.26]} />}
-      {data.type === 'heptagram' && <HeptagramGeometry />}
-      {data.type === 'star' && <torusKnotGeometry args={[0.12, 0.04, 64, 8]} />}
-      <meshPhysicalMaterial 
-        color={data.color} 
-        metalness={1.0} 
-        roughness={0.03} 
-        clearcoat={1} 
-        emissive={data.color}
-        emissiveIntensity={1.4}
-        envMapIntensity={3.0}
-      />
-    </mesh>
+    <group position={data.position} userData={data}>
+      {data.type === 'sphere' && (
+        <mesh>
+          <sphereGeometry args={[0.18 * scale, 48, 48]} />
+          <meshPhysicalMaterial color={data.color} metalness={1.0} roughness={0.01} clearcoat={1.0} clearcoatRoughness={0.01} emissive={data.color} emissiveIntensity={2.2} reflectivity={1.0} envMapIntensity={6.0} />
+        </mesh>
+      )}
+      {data.type === 'box' && <Gift color={data.color} />}
+      {data.type === 'heptagram' && (
+        <mesh>
+          <HeptagramGeometry scale={scale} />
+          <meshPhysicalMaterial color={data.color} metalness={1.0} roughness={0.05} clearcoat={1.0} clearcoatRoughness={0.02} emissive={data.color} emissiveIntensity={1.8} reflectivity={1.0} envMapIntensity={5.0} />
+        </mesh>
+      )}
+    </group>
   );
 };
 
@@ -549,25 +595,14 @@ const PhotoOrnament: React.FC<{ url: string; index: number; isFocused: boolean; 
   }, [index]);
 
   return (
-    <group 
-      position={data.position} 
-      userData={data} 
-      visible={!isFocused} 
-      onClick={(e) => { e.stopPropagation(); onSelect(); }}
-    >
+    <group position={data.position} userData={data} visible={!isFocused} onClick={(e) => { e.stopPropagation(); onSelect(); }}>
        <mesh>
         <planeGeometry args={[1.2, 1.2]} />
         <meshBasicMaterial map={texture} side={THREE.DoubleSide} transparent opacity={0.96} />
       </mesh>
       <mesh scale={[1.25, 1.25, 1]} position={[0, 0, -0.015]}>
         <planeGeometry args={[1.1, 1.1]} />
-        <meshPhysicalMaterial 
-          color={COLORS.GOLD} 
-          metalness={1} 
-          roughness={0} 
-          emissive={COLORS.GOLD} 
-          emissiveIntensity={1.8}
-        />
+        <meshPhysicalMaterial color={COLORS.GOLD} metalness={1.0} roughness={0.05} clearcoat={1.0} emissive={COLORS.GOLD} emissiveIntensity={1.8} />
       </mesh>
     </group>
   );

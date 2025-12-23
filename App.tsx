@@ -234,7 +234,8 @@ const App: React.FC = () => {
         onGestureForm={() => setTreeState(TreeState.FORMED)}
         onDrag={(dx) => {
           if (!focusedPhoto) {
-            rotationVelocity.current = dx * 2.0; 
+            // Increased multiplier from 2.0 to 4.0 to double the rotation amplitude as requested.
+            rotationVelocity.current = dx * 4.0; 
           }
         }}
         onZoom={(dy) => {
