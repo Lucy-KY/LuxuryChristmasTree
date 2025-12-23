@@ -1,5 +1,5 @@
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, Suspense, useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Stars } from '@react-three/drei';
 import LuxuryTree from './components/LuxuryTree';
@@ -7,11 +7,14 @@ import PostProcessing from './components/PostProcessing';
 import OverlayUI from './components/OverlayUI';
 import { TreeState } from './types';
 import { COLORS } from './constants';
+import { generateGreeting } from './services/geminiService';
 
 const App: React.FC = () => {
   const [treeState, setTreeState] = useState<TreeState>(TreeState.CHAOS);
   const [ready, setReady] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [focusedPhoto, setFocusedPhoto] = useState<string | null>(null);
+  const [greeting, setGreeting] = useState<string>("");
 
   const toggleTree = () => {
     setTreeState(prev => prev === TreeState.CHAOS ? TreeState.FORMED : TreeState.CHAOS);
@@ -21,6 +24,15 @@ const App: React.FC = () => {
     setPhotos(prev => [...prev, url]);
   };
 
+  useEffect(() => {
+    if (focusedPhoto) {
+      setGreeting("Reading the stars...");
+      generateGreeting("Honored Guest").then(res => setGreeting(res));
+    } else {
+      setGreeting("");
+    }
+  }, [focusedPhoto]);
+
   return (
     <div className="h-screen w-screen bg-[#000502] overflow-hidden relative">
       {/* 3D Engine Layer */}
@@ -29,9 +41,10 @@ const App: React.FC = () => {
           <Suspense fallback={null}>
             <PerspectiveCamera makeDefault position={[0, 5, 20]} fov={45} />
             <OrbitControls 
-              autoRotate={treeState === TreeState.CHAOS} 
+              autoRotate={treeState === TreeState.CHAOS && !focusedPhoto} 
               autoRotateSpeed={0.5}
               enablePan={false}
+              enabled={!focusedPhoto}
               maxDistance={35}
               minDistance={10}
               target={[0, 6, 0]}
@@ -39,7 +52,6 @@ const App: React.FC = () => {
             
             <color attach="background" args={[COLORS.BACKGROUND]} />
             
-            {/* Ambient and Sparkle Lighting */}
             <ambientLight intensity={0.2} />
             <pointLight position={[10, 10, 10]} intensity={1.5} color={COLORS.GOLD} />
             <spotLight position={[-10, 20, 10]} angle={0.15} penumbra={1} intensity={2} color="#ffffff" castShadow />
@@ -50,6 +62,8 @@ const App: React.FC = () => {
               state={treeState} 
               onReady={() => setReady(true)} 
               photos={photos}
+              focusedPhoto={focusedPhoto}
+              onFocusPhoto={setFocusedPhoto}
             />
 
             <PostProcessing />
@@ -62,6 +76,9 @@ const App: React.FC = () => {
         treeState={treeState} 
         onToggleState={toggleTree} 
         onPhotoUpload={handlePhotoUpload}
+        isPhotoFocused={!!focusedPhoto}
+        onClearFocus={() => setFocusedPhoto(null)}
+        greeting={greeting}
       />
 
       {/* Loading Screen Overlay */}

@@ -1,6 +1,6 @@
 
 import React, { useMemo, useRef, useEffect, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { TreeState, OrnamentData } from '../types';
 import { COLORS, PARTICLE_COUNTS, TREE_PARAMS } from '../constants';
@@ -10,6 +10,8 @@ interface LuxuryTreeProps {
   state: TreeState;
   onReady: () => void;
   photos: string[];
+  focusedPhoto: string | null;
+  onFocusPhoto: (url: string | null) => void;
 }
 
 const StarTopGeometry = () => {
@@ -31,7 +33,99 @@ const StarTopGeometry = () => {
   return <extrudeGeometry args={[shape, { depth: 0.2, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05 }]} />;
 };
 
-const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
+const TRANSITION_DURATION = 1.5;
+
+const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void }> = ({ url, index, onDismiss }) => {
+  const texture = useTexture(url);
+  const { camera } = useThree();
+  const groupRef = useRef<THREE.Group>(null!);
+  const [progress, setProgress] = useState(0);
+  const [isClosing, setIsClosing] = useState(false);
+
+  // Calculate start position (where it sits on the tree)
+  const startPos = useMemo(() => {
+    const angle = (index * 1.5) + Math.PI;
+    const h = 0.25 + (index * 0.12) % 0.55;
+    const r = TREE_PARAMS.BASE_RADIUS * Math.pow(1 - h, 0.85) * 1.1;
+    return new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
+  }, [index]);
+
+  const aspect = useMemo(() => {
+    // Fix: Cast texture.image to any to access width and height as it can be typed as unknown.
+    const img = texture.image as any;
+    if (img && img.width && img.height) {
+      return img.width / img.height;
+    }
+    return 1;
+  }, [texture]);
+
+  useFrame((state, delta) => {
+    if (!groupRef.current) return;
+
+    // Linear progress management
+    if (!isClosing) {
+      if (progress < 1) setProgress(Math.min(1, progress + delta / TRANSITION_DURATION));
+    } else {
+      if (progress > 0) {
+        // Set closing duration to exactly TRANSITION_DURATION (1.5s)
+        setProgress(Math.max(0, progress - delta / TRANSITION_DURATION));
+      } else {
+        onDismiss();
+      }
+    }
+
+    // Smooth Easing (Ease Out for both "picking" and "returning")
+    // When opening, t goes 0 -> 1 with Ease Out.
+    // When closing, progress goes 1 -> 0. We want t to go 1 -> 0 with Ease Out towards the tree.
+    const t = isClosing 
+      ? Math.pow(progress, 4) // Decelerates as it reaches tree (progress -> 0)
+      : 1 - Math.pow(1 - progress, 4); // Decelerates as it reaches camera (progress -> 1)
+
+    // Target position in front of camera
+    const targetPos = new THREE.Vector3(0, 0, -5);
+    targetPos.applyQuaternion(camera.quaternion);
+    targetPos.add(camera.position);
+
+    // Lerp Position
+    groupRef.current.position.lerpVectors(startPos, targetPos, t);
+
+    // Lerp Rotation to face camera
+    const lookAtQuat = camera.quaternion.clone();
+    groupRef.current.quaternion.slerp(lookAtQuat, t);
+
+    // Scale up for impact
+    const s = THREE.MathUtils.lerp(1.2, 3.2, t);
+    groupRef.current.scale.set(s * aspect, s, 1);
+  });
+
+  const handleDismiss = (e: any) => {
+    e.stopPropagation();
+    setIsClosing(true);
+  };
+
+  return (
+    <group ref={groupRef} onClick={handleDismiss} renderOrder={9999}>
+      <mesh>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial map={texture} transparent opacity={1} depthTest={false} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Luxurious Gold Frame with metallic sheen */}
+      <mesh position={[0, 0, -0.01]}>
+        <planeGeometry args={[1.05, 1.05]} />
+        <meshPhysicalMaterial 
+          color={COLORS.GOLD} 
+          metalness={1.0} 
+          roughness={0.02} 
+          emissive={COLORS.GOLD} 
+          emissiveIntensity={1.5}
+          depthTest={false}
+        />
+      </mesh>
+    </group>
+  );
+};
+
+const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focusedPhoto, onFocusPhoto }) => {
   const pointsRef = useRef<THREE.Points>(null!);
   const trunkRef = useRef<THREE.Points>(null!);
   const ribbonPointsRef = useRef<THREE.Points>(null!);
@@ -61,7 +155,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
     const lightEmerald = new THREE.Color(COLORS.LIGHT_EMERALD);
     const brownColor = new THREE.Color(COLORS.BROWN);
 
-    // Foliage Sawtooth Pine Logic - High Density
+    // Foliage Sawtooth Pine Logic
     for (let i = 0; i < PARTICLE_COUNTS.FOLIAGE; i++) {
       const i3 = i * 3;
       const hPct = Math.random();
@@ -149,12 +243,11 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
       }
     }
 
-    // Snow Base Logic - Irregular Snowy Mound
+    // Snow Base Logic
     for (let i = 0; i < PARTICLE_COUNTS.SNOW_BASE; i++) {
       const i3 = i * 3;
       const angle = Math.random() * Math.PI * 2;
       const dist = Math.pow(Math.random(), 0.5) * 10;
-      // Height of the mound based on distance to center
       const noise = (Math.sin(angle * 3) + Math.sin(dist * 2)) * 0.2;
       const h = Math.max(0, (1 - dist / 10) * 1.2) + noise - 1.8;
       
@@ -274,7 +367,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
     snowBaseRef.current.rotation.y += delta * rotSpeed;
     if (ornamentsGroupRef.current) ornamentsGroupRef.current.rotation.y += delta * rotSpeed;
     
-    // Explicit rotation for the top star
     if (starRef.current) {
       starRef.current.rotation.y += delta * 1.5;
     }
@@ -286,7 +378,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
 
   return (
     <group>
-      {/* Foliage - Super Dense Emerald Micro-particles */}
+      {/* Foliage */}
       <points ref={pointsRef}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNTS.FOLIAGE} array={new Float32Array(PARTICLE_COUNTS.FOLIAGE * 3)} itemSize={3} />
@@ -295,7 +387,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
         <pointsMaterial size={0.038} vertexColors transparent opacity={0.95} blending={THREE.AdditiveBlending} />
       </points>
 
-      {/* Trunk - High Density Core */}
+      {/* Trunk */}
       <points ref={trunkRef}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNTS.TRUNK} array={new Float32Array(PARTICLE_COUNTS.TRUNK * 3)} itemSize={3} />
@@ -312,7 +404,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
         <pointsMaterial size={0.12} color={COLORS.GOLD} transparent opacity={1.0} blending={THREE.AdditiveBlending} />
       </points>
 
-      {/* Snowy Base - Irregular mound of white particles */}
+      {/* Snowy Base */}
       <points ref={snowBaseRef}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNTS.SNOW_BASE} array={new Float32Array(PARTICLE_COUNTS.SNOW_BASE * 3)} itemSize={3} />
@@ -325,10 +417,15 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
           <Ornament key={orn.id} data={orn} />
         ))}
         {photos.map((url, idx) => (
-          <PhotoOrnament key={`photo-${idx}`} url={url} index={idx} />
+          <PhotoOrnament 
+            key={`photo-${idx}`} 
+            url={url} 
+            index={idx} 
+            isFocused={focusedPhoto === url}
+            onSelect={() => onFocusPhoto(url)}
+          />
         ))}
         
-        {/* Top Feature - Rotating Light Pink Star */}
         <Float speed={5} rotationIntensity={0.5} floatIntensity={1.5}>
           <mesh ref={starRef} position={[0, TREE_PARAMS.HEIGHT + 0.6, 0]}>
             <StarTopGeometry />
@@ -345,6 +442,15 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
         </Float>
       </group>
 
+      {/* Transitioning Focus View */}
+      {focusedPhoto && (
+        <FocusedPhoto 
+          url={focusedPhoto} 
+          index={photos.indexOf(focusedPhoto)} 
+          onDismiss={() => onFocusPhoto(null)} 
+        />
+      )}
+
       <GoldDust transition={transition} />
       <Snowfall />
     </group>
@@ -353,7 +459,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos }) => {
 
 const GoldDust: React.FC<{ transition: number }> = ({ transition }) => {
   const pointsRef = useRef<THREE.Points>(null!);
-  
   const springData = useMemo(() => {
     const count = PARTICLE_COUNTS.GOLD_DUST;
     const positions = new Float32Array(count * 3);
@@ -408,7 +513,6 @@ const GoldDust: React.FC<{ transition: number }> = ({ transition }) => {
 
 const Snowfall: React.FC = () => {
   const pointsRef = useRef<THREE.Points>(null!);
-  
   const shader = useMemo(() => ({
     uniforms: {
       uTime: { value: 0 },
@@ -526,7 +630,7 @@ const Ornament: React.FC<{ data: OrnamentData }> = ({ data }) => {
   );
 };
 
-const PhotoOrnament: React.FC<{ url: string; index: number }> = ({ url, index }) => {
+const PhotoOrnament: React.FC<{ url: string; index: number; isFocused: boolean; onSelect: () => void }> = ({ url, index, isFocused, onSelect }) => {
   const texture = useTexture(url);
   const data = useMemo<OrnamentData>(() => {
     const angle = (index * 1.5) + Math.PI;
@@ -542,7 +646,12 @@ const PhotoOrnament: React.FC<{ url: string; index: number }> = ({ url, index })
   }, [index]);
 
   return (
-    <group position={data.position} userData={data}>
+    <group 
+      position={data.position} 
+      userData={data} 
+      visible={!isFocused} 
+      onClick={(e) => { e.stopPropagation(); onSelect(); }}
+    >
        <mesh>
         <planeGeometry args={[1.2, 1.2]} />
         <meshBasicMaterial map={texture} side={THREE.DoubleSide} transparent opacity={0.96} />

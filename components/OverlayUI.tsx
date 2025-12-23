@@ -1,15 +1,18 @@
 
 import React from 'react';
 import { TreeState } from '../types';
-import { Sparkles, Image as ImageIcon } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, X } from 'lucide-react';
 
 interface OverlayUIProps {
   treeState: TreeState;
   onToggleState: () => void;
   onPhotoUpload: (url: string) => void;
+  isPhotoFocused: boolean;
+  onClearFocus: () => void;
+  greeting?: string;
 }
 
-const OverlayUI: React.FC<OverlayUIProps> = ({ treeState, onToggleState, onPhotoUpload }) => {
+const OverlayUI: React.FC<OverlayUIProps> = ({ treeState, onToggleState, onPhotoUpload, isPhotoFocused, onClearFocus, greeting }) => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -21,7 +24,7 @@ const OverlayUI: React.FC<OverlayUIProps> = ({ treeState, onToggleState, onPhoto
   return (
     <div className="fixed inset-0 pointer-events-none flex flex-col justify-between p-8 z-10">
       {/* Top Header */}
-      <div className="flex justify-between items-start pointer-events-auto">
+      <div className={`flex justify-between items-start pointer-events-auto transition-opacity duration-700 ${isPhotoFocused ? 'opacity-0' : 'opacity-100'}`}>
         <div className="space-y-1">
           <h1 className="text-5xl font-pinyon metallic-text">Emerald & Gold</h1>
           <p className="text-xs font-cinzel tracking-[0.3em] text-yellow-500/80 uppercase">The House of Eternal Pine</p>
@@ -46,14 +49,33 @@ const OverlayUI: React.FC<OverlayUIProps> = ({ treeState, onToggleState, onPhoto
         </div>
       </div>
 
+      {/* Focus Mode Overlay */}
+      {isPhotoFocused && (
+        <div className="absolute inset-0 flex flex-col items-center justify-end pb-20 pointer-events-none">
+          <div className="max-w-xl text-center px-6 animate-in fade-in slide-in-from-bottom-8 duration-1000 mb-12">
+            <h3 className="text-3xl font-pinyon metallic-text mb-2">A Festive Message</h3>
+            <p className="text-lg font-playfair italic text-white/90 leading-relaxed">
+              {greeting}
+            </p>
+          </div>
+          <button 
+            onClick={onClearFocus}
+            className="pointer-events-auto flex items-center gap-2 bg-black/60 hover:bg-black/80 backdrop-blur-xl px-8 py-4 rounded-full gold-border transition-all transform hover:scale-105 active:scale-95 group"
+          >
+            <X size={20} className="text-yellow-500 group-hover:rotate-90 transition-transform" />
+            <span className="text-sm font-cinzel tracking-widest text-white">Close Focus</span>
+          </button>
+          <p className="mt-4 text-[10px] font-cinzel tracking-[0.2em] text-yellow-500/60 uppercase">Elegance is eternal</p>
+        </div>
+      )}
+
       {/* Bottom Interface */}
-      <div className="flex justify-between items-end pointer-events-auto">
+      <div className={`flex justify-between items-end pointer-events-auto transition-opacity duration-700 ${isPhotoFocused ? 'opacity-0' : 'opacity-100'}`}>
         <div className="space-y-2">
            <div className="h-px w-24 bg-gradient-to-r from-yellow-500 to-transparent" />
            <p className="text-[10px] font-cinzel tracking-[0.4em] text-white/40 uppercase italic">Luxury through geometry</p>
         </div>
 
-        {/* Branding Footer */}
         <div className="text-right space-y-2">
           <p className="text-[10px] font-cinzel tracking-[0.4em] text-white/40 uppercase">Handcrafted for Excellence</p>
           <div className="h-px w-24 bg-gradient-to-r from-transparent to-yellow-500 ml-auto" />
@@ -61,8 +83,8 @@ const OverlayUI: React.FC<OverlayUIProps> = ({ treeState, onToggleState, onPhoto
         </div>
       </div>
 
-      {/* Background Ambience UI elements */}
-      <div className="absolute top-1/2 left-8 -translate-y-1/2 space-y-12 hidden lg:block text-white/10">
+      {/* Side Decorations */}
+      <div className={`absolute top-1/2 left-8 -translate-y-1/2 space-y-12 hidden lg:block text-white/10 transition-opacity duration-700 ${isPhotoFocused ? 'opacity-0' : 'opacity-100'}`}>
         <p className="rotate-90 origin-left font-cinzel text-[10px] tracking-[1em]">PURE MAGIC</p>
         <p className="rotate-90 origin-left font-cinzel text-[10px] tracking-[1em]">ETERNAL GOLD</p>
         <p className="rotate-90 origin-left font-cinzel text-[10px] tracking-[1em]">ROYAL GREEN</p>

@@ -11,6 +11,7 @@ export interface OrnamentData {
   color: string;
   weight: number; // 0.1 (light) to 1.0 (heavy)
   url?: string;
+  aspect?: number;
 }
 
 export interface ParticleConfig {
