@@ -8,6 +8,7 @@ interface HandControllerProps {
   onDrag: (dx: number) => void;
   onZoom: (dy: number) => void;
   onDoublePinch: () => void;
+  onPinch: () => void;
 }
 
 const HandController: React.FC<HandControllerProps> = ({ 
@@ -15,7 +16,8 @@ const HandController: React.FC<HandControllerProps> = ({
   onGestureForm, 
   onDrag, 
   onZoom, 
-  onDoublePinch 
+  onDoublePinch,
+  onPinch
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -25,16 +27,17 @@ const HandController: React.FC<HandControllerProps> = ({
   const lastYRef = useRef<number | null>(null);
   const lastPinchTimeRef = useRef<number>(0);
   const isPinchingRef = useRef<boolean>(false);
+  const lastSinglePinchTimeRef = useRef<number>(0);
   
   // Frame counters for gesture stability
   const dualOpenFramesRef = useRef<number>(0);
   const fistStateFramesRef = useRef<number>(0);
   
-  const STABILITY_THRESHOLD = 8; // Slightly faster response (8 frames instead of 10)
+  const STABILITY_THRESHOLD = 8; 
 
   const [isActive, setIsActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [gestureStatus, setGestureStatus] = useState<'none' | 'chaos' | 'form'>('none');
+  const [gestureStatus, setGestureStatus] = useState<'none' | 'chaos' | 'form' | 'pinch'>('none');
 
   useEffect(() => {
     let isMounted = true;
@@ -128,11 +131,9 @@ const HandController: React.FC<HandControllerProps> = ({
   const processGestures = (results: any) => {
     const hands = results.landmarks;
     
-    // Improved Heuristics
     const isFist = (hand: any[]) => {
       const tips = [8, 12, 16, 20];
       const wrist = hand[0];
-      // Slightly more forgiving threshold (0.14) for fist detection
       return tips.every((tip) => {
         const dist = Math.sqrt(Math.pow(hand[tip].x - wrist.x, 2) + Math.pow(hand[tip].y - wrist.y, 2));
         return dist < 0.14; 
@@ -144,7 +145,7 @@ const HandController: React.FC<HandControllerProps> = ({
       const wrist = hand[0];
       return tips.every((tip) => {
         const dist = Math.sqrt(Math.pow(hand[tip].x - wrist.x, 2) + Math.pow(hand[tip].y - wrist.y, 2));
-        return dist > 0.18; // More inclusive open state
+        return dist > 0.18; 
       });
     };
 
@@ -157,7 +158,6 @@ const HandController: React.FC<HandControllerProps> = ({
       return;
     }
 
-    // --- FORMED Logic (Triggered by ANY hand forming a fist: Single or Dual) ---
     const detectedFist = hands.some((h: any[]) => isFist(h));
     
     if (detectedFist) {
@@ -168,13 +168,11 @@ const HandController: React.FC<HandControllerProps> = ({
         onGestureForm();
         fistStateFramesRef.current = 0; 
       }
-      // Return early to prevent other navigation logic during forming
       return; 
     } else {
       fistStateFramesRef.current = 0;
     }
 
-    // --- CHAOS Logic (Requires exactly TWO hands detected, both OPEN) ---
     if (hands.length === 2) {
       const bothOpen = isOpen(hands[0]) && isOpen(hands[1]);
       if (bothOpen) {
@@ -192,10 +190,13 @@ const HandController: React.FC<HandControllerProps> = ({
       dualOpenFramesRef.current = 0;
     }
 
-    // --- Navigation Logic (Exactly one hand, must be OPEN) ---
     if (hands.length === 1) {
       const hand = hands[0];
       const wrist = hand[0];
+
+      // Single/Double Pinch detection logic
+      const dist = Math.sqrt(Math.pow(hand[4].x - hand[8].x, 2) + Math.pow(hand[4].y - hand[8].y, 2));
+      const pinchingNow = dist < 0.035;
 
       if (isOpen(hand)) {
         if (lastXRef.current !== null && lastYRef.current !== null) {
@@ -208,17 +209,25 @@ const HandController: React.FC<HandControllerProps> = ({
             onDrag(-dx * 1.2); 
           }
         }
+        setGestureStatus(pinchingNow ? 'pinch' : 'none');
+      } else if (pinchingNow) {
+        setGestureStatus('pinch');
+      } else {
         setGestureStatus('none');
       }
 
       lastXRef.current = wrist.x;
       lastYRef.current = wrist.y;
-
-      // Double Pinch detection
-      const dist = Math.sqrt(Math.pow(hand[4].x - hand[8].x, 2) + Math.pow(hand[4].y - hand[8].y, 2));
-      const pinchingNow = dist < 0.035;
+      
       if (pinchingNow && !isPinchingRef.current) {
         const now = Date.now();
+        // Detect single pinch if it's been long enough since the last one
+        if (now - lastSinglePinchTimeRef.current > 1000) {
+            onPinch();
+            lastSinglePinchTimeRef.current = now;
+        }
+
+        // Check for double pinch
         if (now - lastPinchTimeRef.current < 500) {
           onDoublePinch();
           lastPinchTimeRef.current = 0; 
@@ -237,6 +246,7 @@ const HandController: React.FC<HandControllerProps> = ({
     let strokeColor = '#FFD700';
     if (gestureStatus === 'chaos') strokeColor = '#10b981';
     if (gestureStatus === 'form') strokeColor = '#fbbf24';
+    if (gestureStatus === 'pinch') strokeColor = '#fef08a';
     
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth = 2;
@@ -280,17 +290,27 @@ const HandController: React.FC<HandControllerProps> = ({
       <canvas ref={canvasRef} width={192} height={144} className="w-full h-full opacity-60" />
       
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-        <h2 className="text-sm font-cinzel metallic-text tracking-widest uppercase mb-1 drop-shadow-lg">
-          {gestureStatus === 'chaos' ? 'Release Magic' : gestureStatus === 'form' ? 'Rebuild Tree' : 'Merry Christmas'}
+        <h2 className="text-sm font-cinzel metallic-text tracking-widest uppercase mb-1 drop-shadow-lg text-center px-2">
+          {gestureStatus === 'chaos' ? 'Release Magic' : 
+           gestureStatus === 'form' ? 'Rebuild Tree' : 
+           gestureStatus === 'pinch' ? 'Pinch Detected' : 
+           'Merry Christmas'}
         </h2>
-        <div className="h-[2px] w-12 bg-yellow-500/40 rounded-full overflow-hidden">
-          <div 
-            className="h-full bg-yellow-400 transition-all duration-100" 
-            style={{ 
-              width: `${Math.max(dualOpenFramesRef.current, fistStateFramesRef.current) * (100 / STABILITY_THRESHOLD)}%` 
-            }} 
-          />
-        </div>
+        
+        {gestureStatus === 'pinch' ? (
+          <div className="text-[10px] font-cinzel text-yellow-200 animate-pulse tracking-[0.2em] uppercase mt-1">
+            Magic Active
+          </div>
+        ) : (
+          <div className="h-[2px] w-12 bg-yellow-500/40 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-yellow-400 transition-all duration-100" 
+              style={{ 
+                width: `${Math.max(dualOpenFramesRef.current, fistStateFramesRef.current) * (100 / STABILITY_THRESHOLD)}%` 
+              }} 
+            />
+          </div>
+        )}
       </div>
 
       {!isActive && !error && (

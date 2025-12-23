@@ -18,7 +18,6 @@ const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void
   const [progress, setProgress] = useState(0);
   const [isClosing, setIsClosing] = useState(false);
 
-  // Capture world starting position on mount to ensure pop-out is seamless
   const startPos = useMemo(() => {
     const angle = (index * 1.5) + Math.PI;
     const h = 0.25 + (index * 0.12) % 0.55;
@@ -55,7 +54,6 @@ const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void
       ? Math.pow(progress, 4) 
       : 1 - Math.pow(1 - progress, 4);
 
-    // Target is ALWAYS the center of the viewport (fixed relative to camera)
     const targetPos = new THREE.Vector3(0, 0, -5);
     targetPos.applyQuaternion(camera.quaternion);
     targetPos.add(camera.position);
@@ -105,7 +103,13 @@ const Scene: React.FC<{
   zoomTarget: React.MutableRefObject<number>;
   controlsRef: React.MutableRefObject<any>;
   rotationGroupRef: React.MutableRefObject<THREE.Group>;
-}> = ({ treeState, ready, setReady, photos, focusedPhoto, setFocusedPhoto, rotationVelocity, zoomTarget, controlsRef, rotationGroupRef }) => {
+  onRegisterCamera: (cam: THREE.Camera) => void;
+}> = ({ treeState, ready, setReady, photos, focusedPhoto, setFocusedPhoto, rotationVelocity, zoomTarget, controlsRef, rotationGroupRef, onRegisterCamera }) => {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    onRegisterCamera(camera);
+  }, [camera, onRegisterCamera]);
   
   useFrame((state, delta) => {
     if (!focusedPhoto) {
@@ -145,7 +149,6 @@ const Scene: React.FC<{
       
       <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
 
-      {/* Rotating Tree Container */}
       <group ref={rotationGroupRef}>
         <LuxuryTree 
           state={treeState} 
@@ -156,7 +159,6 @@ const Scene: React.FC<{
         />
       </group>
 
-      {/* Static Focused View (Outside rotating group) */}
       {focusedPhoto && (
         <FocusedPhoto 
           url={focusedPhoto} 
@@ -176,12 +178,15 @@ const App: React.FC = () => {
   const [ready, setReady] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
   const [focusedPhoto, setFocusedPhoto] = useState<string | null>(null);
+  const [pinchPreview, setPinchPreview] = useState<string | null>(null);
   const [greeting, setGreeting] = useState<string>("");
   
+  const cameraRef = useRef<THREE.Camera | null>(null);
   const controlsRef = useRef<any>(null);
   const rotationGroupRef = useRef<THREE.Group>(null!);
   const rotationVelocity = useRef<number>(0);
   const zoomTarget = useRef<number>(20);
+  const pinchTimeoutRef = useRef<number | null>(null);
 
   const toggleTree = () => {
     setTreeState(prev => prev === TreeState.CHAOS ? TreeState.FORMED : TreeState.CHAOS);
@@ -196,6 +201,38 @@ const App: React.FC = () => {
       setFocusedPhoto(null);
     } else if (photos.length > 0) {
       setFocusedPhoto(photos[photos.length - 1]);
+    }
+  };
+
+  const handlePinch = () => {
+    if (photos.length === 0 || !cameraRef.current || !rotationGroupRef.current) return;
+
+    // Find the photo ornament nearest to the foreground (camera position)
+    let nearestUrl = null;
+    let minDist = Infinity;
+
+    photos.forEach((url, index) => {
+      const angle = (index * 1.5) + Math.PI;
+      const h = 0.25 + (index * 0.12) % 0.55;
+      const r = TREE_RADIUS_FACTOR(h);
+      const localPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
+      
+      // Transform to world space
+      localPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
+      
+      const dist = localPos.distanceTo(cameraRef.current.position);
+      if (dist < minDist) {
+        minDist = dist;
+        nearestUrl = url;
+      }
+    });
+
+    if (nearestUrl) {
+      setPinchPreview(nearestUrl);
+      if (pinchTimeoutRef.current) clearTimeout(pinchTimeoutRef.current);
+      pinchTimeoutRef.current = window.setTimeout(() => {
+        setPinchPreview(null);
+      }, 3000);
     }
   };
 
@@ -224,6 +261,7 @@ const App: React.FC = () => {
               zoomTarget={zoomTarget}
               controlsRef={controlsRef}
               rotationGroupRef={rotationGroupRef}
+              onRegisterCamera={(cam) => cameraRef.current = cam}
             />
           </Suspense>
         </Canvas>
@@ -234,7 +272,6 @@ const App: React.FC = () => {
         onGestureForm={() => setTreeState(TreeState.FORMED)}
         onDrag={(dx) => {
           if (!focusedPhoto) {
-            // Increased multiplier from 2.0 to 4.0 to double the rotation amplitude as requested.
             rotationVelocity.current = dx * 4.0; 
           }
         }}
@@ -244,7 +281,21 @@ const App: React.FC = () => {
           }
         }}
         onDoublePinch={handleDoublePinch}
+        onPinch={handlePinch}
       />
+
+      {/* Pinch Peek Preview Overlay */}
+      {pinchPreview && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none animate-in fade-in zoom-in duration-500">
+          <div className="relative w-[200px] h-[400px] bg-black/40 backdrop-blur-2xl rounded-sm gold-border overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.3)]">
+            <img src={pinchPreview} className="w-full h-full object-cover opacity-90" alt="Pinch Preview" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+            <div className="absolute bottom-4 left-0 right-0 text-center">
+              <p className="text-[10px] font-cinzel text-yellow-500 tracking-[0.2em] uppercase">Captured Moment</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <OverlayUI 
         treeState={treeState} 
