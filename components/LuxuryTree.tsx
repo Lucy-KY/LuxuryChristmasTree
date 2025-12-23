@@ -42,7 +42,6 @@ const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void
   const [progress, setProgress] = useState(0);
   const [isClosing, setIsClosing] = useState(false);
 
-  // Calculate start position (where it sits on the tree)
   const startPos = useMemo(() => {
     const angle = (index * 1.5) + Math.PI;
     const h = 0.25 + (index * 0.12) % 0.55;
@@ -51,7 +50,6 @@ const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void
   }, [index]);
 
   const aspect = useMemo(() => {
-    // Fix: Cast texture.image to any to access width and height as it can be typed as unknown.
     const img = texture.image as any;
     if (img && img.width && img.height) {
       return img.width / img.height;
@@ -62,38 +60,28 @@ const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void
   useFrame((state, delta) => {
     if (!groupRef.current) return;
 
-    // Linear progress management
     if (!isClosing) {
       if (progress < 1) setProgress(Math.min(1, progress + delta / TRANSITION_DURATION));
     } else {
       if (progress > 0) {
-        // Set closing duration to exactly TRANSITION_DURATION (1.5s)
         setProgress(Math.max(0, progress - delta / TRANSITION_DURATION));
       } else {
         onDismiss();
       }
     }
 
-    // Smooth Easing (Ease Out for both "picking" and "returning")
-    // When opening, t goes 0 -> 1 with Ease Out.
-    // When closing, progress goes 1 -> 0. We want t to go 1 -> 0 with Ease Out towards the tree.
     const t = isClosing 
-      ? Math.pow(progress, 4) // Decelerates as it reaches tree (progress -> 0)
-      : 1 - Math.pow(1 - progress, 4); // Decelerates as it reaches camera (progress -> 1)
+      ? Math.pow(progress, 4) 
+      : 1 - Math.pow(1 - progress, 4);
 
-    // Target position in front of camera
     const targetPos = new THREE.Vector3(0, 0, -5);
     targetPos.applyQuaternion(camera.quaternion);
     targetPos.add(camera.position);
 
-    // Lerp Position
     groupRef.current.position.lerpVectors(startPos, targetPos, t);
-
-    // Lerp Rotation to face camera
     const lookAtQuat = camera.quaternion.clone();
     groupRef.current.quaternion.slerp(lookAtQuat, t);
 
-    // Scale up for impact
     const s = THREE.MathUtils.lerp(1.2, 3.2, t);
     groupRef.current.scale.set(s * aspect, s, 1);
   });
@@ -109,7 +97,6 @@ const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial map={texture} transparent opacity={1} depthTest={false} side={THREE.DoubleSide} />
       </mesh>
-      {/* Luxurious Gold Frame with metallic sheen */}
       <mesh position={[0, 0, -0.01]}>
         <planeGeometry args={[1.05, 1.05]} />
         <meshPhysicalMaterial 
@@ -134,7 +121,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
   const starRef = useRef<THREE.Mesh>(null!);
   const [transition, setTransition] = useState(0);
 
-  // General Particles (Foliage, Trunk, Ribbons, Snow Base)
   const particles = useMemo(() => {
     const foliagePos = new Float32Array(PARTICLE_COUNTS.FOLIAGE * 3);
     const foliageChaos = new Float32Array(PARTICLE_COUNTS.FOLIAGE * 3);
@@ -149,13 +135,15 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
 
     const snowBasePos = new Float32Array(PARTICLE_COUNTS.SNOW_BASE * 3);
     const snowBaseChaos = new Float32Array(PARTICLE_COUNTS.SNOW_BASE * 3);
+    const snowBaseGrowth = new Float32Array(PARTICLE_COUNTS.SNOW_BASE);
+    const snowBaseVariation = new Float32Array(PARTICLE_COUNTS.SNOW_BASE);
 
     const goldColor = new THREE.Color(COLORS.GOLD);
     const emeraldColor = new THREE.Color(COLORS.EMERALD);
     const lightEmerald = new THREE.Color(COLORS.LIGHT_EMERALD);
     const brownColor = new THREE.Color(COLORS.BROWN);
 
-    // Foliage Sawtooth Pine Logic
+    // Foliage Generation
     for (let i = 0; i < PARTICLE_COUNTS.FOLIAGE; i++) {
       const i3 = i * 3;
       const hPct = Math.random();
@@ -164,22 +152,18 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       const tierProgress = (y % tierSize) / tierSize;
       const baseR = TREE_PARAMS.BASE_RADIUS * Math.pow(1 - hPct, 0.95);
       const sawtooth = 1 - (tierProgress * TREE_PARAMS.SAWTOOTH_DEPTH);
-      
       const spread = (0.3 + 0.7 * Math.pow(Math.random(), 1.5));
       const r = (baseR * sawtooth + Math.sin(hPct * 50 + (i % 30)) * 0.12) * spread;
       const angle = Math.random() * Math.PI * 2;
-      
       foliagePos[i3] = Math.cos(angle) * r;
       foliagePos[i3 + 1] = y;
       foliagePos[i3 + 2] = Math.sin(angle) * r;
-
-      const chaosPhi = Math.acos(2 * Math.random() - 1);
+      const chaosPhi = Math.acos(Math.min(1, Math.max(-1, 2 * Math.random() - 1)));
       const chaosTheta = Math.random() * Math.PI * 2;
       const chaosR = 9 + Math.random() * 5;
       foliageChaos[i3] = chaosR * Math.sin(chaosPhi) * Math.cos(chaosTheta);
       foliageChaos[i3 + 1] = chaosR * Math.sin(chaosPhi) * Math.sin(chaosTheta) + 6;
       foliageChaos[i3 + 2] = chaosR * Math.cos(chaosPhi);
-
       const colorRoll = Math.random();
       let c = emeraldColor;
       if (colorRoll > 0.96) c = goldColor;
@@ -189,7 +173,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       foliageColors[i3 + 2] = c.b;
     }
 
-    // Trunk Particles
+    // Trunk Generation
     for (let i = 0; i < PARTICLE_COUNTS.TRUNK; i++) {
       const i3 = i * 3;
       const y = (Math.random() * 2.2) - 1.5; 
@@ -208,19 +192,17 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       trunkPos[i3] = x;
       trunkPos[i3 + 1] = y;
       trunkPos[i3 + 2] = z;
-
       const chaosAngle = Math.random() * Math.PI * 2;
       const chaosR = 5 + Math.random() * 2;
       trunkChaos[i3] = Math.cos(chaosAngle) * chaosR;
       trunkChaos[i3 + 1] = (Math.random() - 0.5) * 12;
       trunkChaos[i3 + 2] = Math.sin(chaosAngle) * chaosR;
-
       trunkColors[i3] = brownColor.r;
       trunkColors[i3 + 1] = brownColor.g;
       trunkColors[i3 + 2] = brownColor.b;
     }
 
-    // Ribbon Particles
+    // Ribbon Generation
     const perRibbon = PARTICLE_COUNTS.RIBBON / 2;
     for (let rIdx = 0; rIdx < 2; rIdx++) {
       const offset = rIdx * Math.PI;
@@ -230,11 +212,9 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
         const y = t * TREE_PARAMS.HEIGHT;
         const spiralAngle = t * Math.PI * 2 * TREE_PARAMS.RIBBON_SPIRALS + offset;
         const radius = TREE_PARAMS.BASE_RADIUS * Math.pow(1 - t, 0.7) * 1.15;
-        
         ribbonPos[i3] = Math.cos(spiralAngle) * radius + (Math.random() - 0.5) * 0.5;
         ribbonPos[i3 + 1] = y + (Math.random() - 0.5) * 0.5;
         ribbonPos[i3 + 2] = Math.sin(spiralAngle) * radius + (Math.random() - 0.5) * 0.5;
-
         const cRadius = 10 + Math.random() * 4;
         const cAngle = Math.random() * Math.PI * 2;
         ribbonChaos[i3] = Math.cos(cAngle) * cRadius;
@@ -243,30 +223,45 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       }
     }
 
-    // Snow Base Logic
+    // Hilly Snow Base Generation
     for (let i = 0; i < PARTICLE_COUNTS.SNOW_BASE; i++) {
       const i3 = i * 3;
       const angle = Math.random() * Math.PI * 2;
-      const dist = Math.pow(Math.random(), 0.5) * 10;
-      const noise = (Math.sin(angle * 3) + Math.sin(dist * 2)) * 0.2;
-      const h = Math.max(0, (1 - dist / 10) * 1.2) + noise - 1.8;
+      const dist = Math.pow(Math.random(), 0.5) * 18; 
+      const x = Math.cos(angle) * dist;
+      const z = Math.sin(angle) * dist;
       
-      snowBasePos[i3] = Math.cos(angle) * dist;
-      snowBasePos[i3 + 1] = h;
-      snowBasePos[i3 + 2] = Math.sin(angle) * dist;
-
+      // Calculate topography using multi-layered sine noise for a "hilly" look
+      // Layer 1: Large scale mountains
+      const layer1 = Math.sin(x * 0.2) * Math.cos(z * 0.2) * 1.5;
+      // Layer 2: Medium scale ridges
+      const layer2 = Math.sin(x * 0.5 + z * 0.3) * 0.6;
+      // Layer 3: Small scale drifts
+      const layer3 = Math.sin(x * 1.2) * Math.sin(z * 1.1) * 0.2;
+      
+      const topoHeight = layer1 + layer2 + layer3;
+      
+      snowBasePos[i3] = x;
+      snowBasePos[i3 + 1] = -2.5; // Base level
+      snowBasePos[i3 + 2] = z;
+      
       const chaosPhi = Math.random() * Math.PI * 2;
-      const chaosR = 12 + Math.random() * 5;
+      const chaosR = 15 + Math.random() * 10;
       snowBaseChaos[i3] = Math.cos(chaosPhi) * chaosR;
-      snowBaseChaos[i3 + 1] = -10 + Math.random() * 5;
+      snowBaseChaos[i3 + 1] = -18 + Math.random() * 5;
       snowBaseChaos[i3 + 2] = Math.sin(chaosPhi) * chaosR;
+      snowBaseGrowth[i] = 0;
+      
+      // Store the combined topographical factor (normalized-ish)
+      // We use this to influence how much snow "sticks" and the max height of the hill at this point
+      snowBaseVariation[i] = topoHeight; 
     }
 
     return { 
       foliage: { pos: foliagePos, chaos: foliageChaos, colors: foliageColors },
       trunk: { pos: trunkPos, chaos: trunkChaos, colors: trunkColors },
       ribbon: { pos: ribbonPos, chaos: ribbonChaos },
-      snowBase: { pos: snowBasePos, chaos: snowBaseChaos }
+      snowBase: { pos: snowBasePos, chaos: snowBaseChaos, growth: snowBaseGrowth, variation: snowBaseVariation }
     };
   }, []);
 
@@ -278,8 +273,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       const type = types[i % types.length];
       let weight = 0.5; 
       if (type === 'box') weight = 0.8;
-      if (type === 'sphere') weight = 0.5;
-      if (type === 'heptagram' || type === 'star') weight = 0.2;
       const hPct = 0.2 + Math.random() * 0.65; 
       const y = hPct * TREE_PARAMS.HEIGHT;
       const baseR = TREE_PARAMS.BASE_RADIUS * Math.pow(1 - hPct, 0.85);
@@ -305,7 +298,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
 
     const time = stateClock.clock.elapsedTime;
 
-    // Foliage update
+    // Foliage
     const foliagePos = pointsRef.current.geometry.attributes.position.array as Float32Array;
     for (let i = 0; i < PARTICLE_COUNTS.FOLIAGE; i++) {
       const i3 = i * 3;
@@ -315,7 +308,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
     }
     pointsRef.current.geometry.attributes.position.needsUpdate = true;
 
-    // Trunk update
+    // Trunk
     const trunkPos = trunkRef.current.geometry.attributes.position.array as Float32Array;
     for (let i = 0; i < PARTICLE_COUNTS.TRUNK; i++) {
       const i3 = i * 3;
@@ -325,7 +318,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
     }
     trunkRef.current.geometry.attributes.position.needsUpdate = true;
 
-    // Ribbon update
+    // Ribbon
     const ribbonPosArr = ribbonPointsRef.current.geometry.attributes.position.array as Float32Array;
     for (let i = 0; i < PARTICLE_COUNTS.RIBBON; i++) {
       const i3 = i * 3;
@@ -337,17 +330,42 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
     }
     ribbonPointsRef.current.geometry.attributes.position.needsUpdate = true;
 
-    // Snow Base update
+    // Mountainous Snow Base Update
     const snowPosArr = snowBaseRef.current.geometry.attributes.position.array as Float32Array;
+    const growthArr = snowBaseRef.current.geometry.attributes.aGrowth.array as Float32Array;
+    
     for (let i = 0; i < PARTICLE_COUNTS.SNOW_BASE; i++) {
       const i3 = i * 3;
+      const x = particles.snowBase.pos[i3];
+      const z = particles.snowBase.pos[i3+2];
+      const r = Math.sqrt(x*x + z*z);
+      
+      // The hill's height at this specific point
+      const mountainHeight = particles.snowBase.variation[i];
+      // Close to the tree, snow accumulates more in the hills
+      const proximityFactor = Math.max(0, 1.0 - (r / 20.0));
+      const driftMaxHeight = (mountainHeight + 1.5) * proximityFactor + 0.5;
+      
+      if (newTransition > 0.7 && Math.random() < 0.02) {
+        growthArr[i] = Math.min(driftMaxHeight, growthArr[i] + delta * 0.8);
+      }
+      
+      // Subtle melting and shifting
+      if (growthArr[i] > driftMaxHeight) {
+        growthArr[i] -= delta * 0.1;
+      }
+
+      const noise = Math.sin(time * 0.8 + i * 0.05) * 0.02 * Math.min(1.0, growthArr[i]);
+      const targetY = particles.snowBase.pos[i3+1] + growthArr[i] + noise;
+      
       snowPosArr[i3] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3], particles.snowBase.pos[i3], newTransition);
-      snowPosArr[i3 + 1] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3 + 1], particles.snowBase.pos[i3 + 1], newTransition);
+      snowPosArr[i3 + 1] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3 + 1], targetY, newTransition);
       snowPosArr[i3 + 2] = THREE.MathUtils.lerp(particles.snowBase.chaos[i3 + 2], particles.snowBase.pos[i3 + 2], newTransition);
     }
     snowBaseRef.current.geometry.attributes.position.needsUpdate = true;
+    snowBaseRef.current.geometry.attributes.aGrowth.needsUpdate = true;
 
-    // Ornaments sway
+    // Ornaments swaying
     if (ornamentsGroupRef.current) {
       ornamentsGroupRef.current.children.forEach((child, idx) => {
         const orn = child.userData as OrnamentData;
@@ -366,10 +384,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
     ribbonPointsRef.current.rotation.y += delta * rotSpeed;
     snowBaseRef.current.rotation.y += delta * rotSpeed;
     if (ornamentsGroupRef.current) ornamentsGroupRef.current.rotation.y += delta * rotSpeed;
-    
-    if (starRef.current) {
-      starRef.current.rotation.y += delta * 1.5;
-    }
+    if (starRef.current) starRef.current.rotation.y += delta * 1.5;
   });
 
   useEffect(() => {
@@ -378,7 +393,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
 
   return (
     <group>
-      {/* Foliage */}
       <points ref={pointsRef}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNTS.FOLIAGE} array={new Float32Array(PARTICLE_COUNTS.FOLIAGE * 3)} itemSize={3} />
@@ -387,7 +401,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
         <pointsMaterial size={0.038} vertexColors transparent opacity={0.95} blending={THREE.AdditiveBlending} />
       </points>
 
-      {/* Trunk */}
       <points ref={trunkRef}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNTS.TRUNK} array={new Float32Array(PARTICLE_COUNTS.TRUNK * 3)} itemSize={3} />
@@ -396,7 +409,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
         <pointsMaterial size={0.055} vertexColors transparent opacity={0.9} />
       </points>
 
-      {/* Ribbon Particles */}
       <points ref={ribbonPointsRef}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNTS.RIBBON} array={new Float32Array(PARTICLE_COUNTS.RIBBON * 3)} itemSize={3} />
@@ -404,12 +416,12 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
         <pointsMaterial size={0.12} color={COLORS.GOLD} transparent opacity={1.0} blending={THREE.AdditiveBlending} />
       </points>
 
-      {/* Snowy Base */}
       <points ref={snowBaseRef}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={PARTICLE_COUNTS.SNOW_BASE} array={new Float32Array(PARTICLE_COUNTS.SNOW_BASE * 3)} itemSize={3} />
+          <bufferAttribute attach="attributes-aGrowth" count={PARTICLE_COUNTS.SNOW_BASE} array={particles.snowBase.growth} itemSize={1} />
         </bufferGeometry>
-        <pointsMaterial size={0.045} color="#ffffff" transparent opacity={0.9} blending={THREE.AdditiveBlending} />
+        <pointsMaterial size={0.05} color="#ffffff" transparent opacity={0.95} blending={THREE.AdditiveBlending} />
       </points>
 
       <group ref={ornamentsGroupRef} scale={[transition, transition, transition]} visible={transition > 0.1}>
@@ -442,7 +454,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
         </Float>
       </group>
 
-      {/* Transitioning Focus View */}
       {focusedPhoto && (
         <FocusedPhoto 
           url={focusedPhoto} 
@@ -478,7 +489,6 @@ const GoldDust: React.FC<{ transition: number }> = ({ transition }) => {
     const time = state.clock.elapsedTime;
     const posAttr = pointsRef.current.geometry.attributes.position.array as Float32Array;
     const { velocities } = springData;
-
     for (let i = 0; i < PARTICLE_COUNTS.GOLD_DUST; i++) {
       const i3 = i * 3;
       const spiralAngle = (time * 0.28) + (i * 0.07);
@@ -486,14 +496,11 @@ const GoldDust: React.FC<{ transition: number }> = ({ transition }) => {
       const tx = Math.cos(spiralAngle) * rTarget;
       const ty = (i / PARTICLE_COUNTS.GOLD_DUST) * 16;
       const tz = Math.sin(spiralAngle) * rTarget;
-
       const k = 0.048;
       const damping = 0.93;
-      
       velocities[i3] = (velocities[i3] + (tx - posAttr[i3]) * k) * damping;
       velocities[i3 + 1] = (velocities[i3 + 1] + (ty - posAttr[i3 + 1]) * k) * damping;
       velocities[i3 + 2] = (velocities[i3 + 2] + (tz - posAttr[i3 + 2]) * k) * damping;
-
       posAttr[i3] += velocities[i3] * delta * 60;
       posAttr[i3 + 1] += velocities[i3 + 1] * delta * 60;
       posAttr[i3 + 2] += velocities[i3 + 2] * delta * 60;
@@ -563,9 +570,9 @@ const Snowfall: React.FC = () => {
     const speed = new Float32Array(count);
     const offset = new Float32Array(count);
     for (let i = 0; i < count; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 50;
+      pos[i * 3] = (Math.random() - 0.5) * 60;
       pos[i * 3 + 1] = Math.random() * 35;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 50;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 60;
       size[i] = Math.random() * 2.5 + 0.8;
       speed[i] = 0.45 + Math.random();
       offset[i] = Math.random() * 100;
