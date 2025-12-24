@@ -49,30 +49,23 @@ const OverlayUI: React.FC<OverlayUIProps> = ({ treeState, onToggleState, onPhoto
         </div>
       </div>
 
-      {/* Focus Mode Overlay */}
+      {/* Focus Mode Overlay - Strictly functional, no decorative text */}
       {isPhotoFocused && (
         <div className="absolute inset-0 flex flex-col items-center justify-end pb-20 pointer-events-none">
-          <div className="max-w-xl text-center px-6 animate-in fade-in slide-in-from-bottom-8 duration-1000 mb-12">
-            <h3 className="text-3xl font-pinyon metallic-text mb-2">A Festive Message</h3>
-            <p className="text-lg font-playfair italic text-white/90 leading-relaxed">
-              {greeting}
-            </p>
-          </div>
           <button 
             onClick={onClearFocus}
-            className="pointer-events-auto flex items-center gap-2 bg-black/60 hover:bg-black/80 backdrop-blur-xl px-8 py-4 rounded-full gold-border transition-all transform hover:scale-105 active:scale-95 group"
+            className="pointer-events-auto flex items-center gap-2 bg-black/60 hover:bg-black/80 backdrop-blur-xl px-10 py-5 rounded-full gold-border transition-all transform hover:scale-105 active:scale-95 group shadow-2xl"
           >
-            <X size={20} className="text-yellow-500 group-hover:rotate-90 transition-transform" />
-            <span className="text-sm font-cinzel tracking-widest text-white">Close Focus</span>
+            <X size={24} className="text-yellow-500 group-hover:rotate-90 transition-transform" />
+            <span className="text-base font-cinzel tracking-[0.2em] text-white">CLOSE FOCUS</span>
           </button>
-          <p className="mt-4 text-[10px] font-cinzel tracking-[0.2em] text-yellow-500/60 uppercase">Elegance is eternal</p>
         </div>
       )}
 
       {/* Bottom Interface */}
       <div className={`flex justify-between items-end pointer-events-auto transition-opacity duration-700 ${isPhotoFocused ? 'opacity-0' : 'opacity-100'}`}>
         <div className="space-y-2">
-          {/* Bottom left intentionally minimal for the hand tracker view */}
+          {/* Tracker reserved space */}
         </div>
 
         <div className="text-right space-y-2">

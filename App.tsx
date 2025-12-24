@@ -1,6 +1,6 @@
 
 import React, { useState, Suspense, useEffect, useRef, useMemo } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useFrame, useThree, ThreeElements } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Stars, useTexture } from '@react-three/drei';
 import LuxuryTree, { TREE_RADIUS_FACTOR, TRANSITION_DURATION } from './components/LuxuryTree';
 import PostProcessing from './components/PostProcessing';
@@ -8,91 +8,113 @@ import OverlayUI from './components/OverlayUI';
 import HandController from './components/HandController';
 import { TreeState } from './types';
 import { COLORS, TREE_PARAMS } from './constants';
-import { generateGreeting } from './services/geminiService';
 import * as THREE from 'three';
 
-const FOCUS_DIST = 8; // Distance in front of camera
+// Fix: Robust JSX augmentation to ensure Three.js intrinsic elements are recognized
+// across different React and TypeScript configurations (targeting both global JSX and React.JSX).
+declare global {
+  namespace JSX {
+    interface IntrinsicElements extends ThreeElements {}
+  }
+  namespace React {
+    namespace JSX {
+      interface IntrinsicElements extends ThreeElements {}
+    }
+  }
+}
 
 const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void; treeRef: React.RefObject<THREE.Group> }> = ({ url, index, onDismiss, treeRef }) => {
   const texture = useTexture(url);
-  const { camera, size } = useThree();
+  const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null!);
   const [progress, setProgress] = useState(0);
   const [isClosing, setIsClosing] = useState(false);
-  
-  const startPos = useRef(new THREE.Vector3());
-  const startQuat = useRef(new THREE.Quaternion());
 
-  useEffect(() => {
+  // Initial wild rotation for cinematic entry
+  const initialRot = useMemo(() => new THREE.Euler(
+    (Math.random() - 0.5) * 1.5,
+    (Math.random() - 0.5) * Math.PI * 2,
+    (Math.random() - 0.5) * 1.5
+  ), []);
+
+  const startPos = useMemo(() => {
+    const angle = (index * 1.5) + Math.PI;
+    const h = 0.25 + (index * 0.12) % 0.55;
+    const r = TREE_RADIUS_FACTOR(h);
+    const local = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
     if (treeRef.current) {
-      treeRef.current.updateMatrixWorld();
-      const angle = (index * 1.5) + Math.PI;
-      const h = 0.25 + (index * 0.12) % 0.55;
-      const r = TREE_RADIUS_FACTOR(h);
-      const local = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
-      startPos.current.copy(local).applyMatrix4(treeRef.current.matrixWorld);
-      startQuat.current.setFromRotationMatrix(treeRef.current.matrixWorld);
+      local.applyMatrix4(treeRef.current.matrixWorld);
     }
+    return local;
   }, [index, treeRef]);
 
   const aspect = useMemo(() => {
     const img = texture.image as any;
-    return (img && img.width) ? img.width / img.height : 1;
+    return (img && img.width && img.height) ? img.width / img.height : 1;
   }, [texture]);
 
-  // Accurate responsive scale based on screen dimensions and camera FOV
-  const targetScale = useMemo(() => {
-    const pCam = camera as THREE.PerspectiveCamera;
-    const fovRad = (pCam.fov * Math.PI) / 180;
+  // Massive Scale base: 4/5 of screen height
+  // User requested: 0.5x for horizontal, 0.8x for vertical relative to previous "doubled" state
+  const finalFocusHeight = useMemo(() => {
+    const distance = 4.5;
+    const fovRad = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180);
+    const frustumHeightAtDistance = 2 * distance * Math.tan(fovRad / 2);
+    const baseFocusHeight = (frustumHeightAtDistance / 5) * 4;
     
-    // Height of the full viewport at FOCUS_DIST units away
-    const viewportHeightAtDist = 2 * Math.tan(fovRad / 2) * FOCUS_DIST;
-    const viewportWidthAtDist = viewportHeightAtDist * (size.width / size.height);
-    
-    // User Constraint: H <= 1/2 screen height, W <= 1/3 screen width
-    const maxH = viewportHeightAtDist * 0.5;
-    const maxW = viewportWidthAtDist * 0.33;
-    
-    let finalH = maxH;
-    let finalW = finalH * aspect;
-    
-    // Fit to width if aspect is too wide
-    if (finalW > maxW) {
-      finalW = maxW;
-      finalH = finalW / aspect;
-    }
-    
-    return { w: finalW, h: finalH };
-  }, [camera, size, aspect]);
+    const multiplier = aspect > 1 ? 0.5 : 0.8;
+    return baseFocusHeight * multiplier;
+  }, [camera, aspect]);
 
   useFrame((state, delta) => {
     if (!groupRef.current) return;
 
+    const speed = isClosing ? 1.8 : 0.7; // Even slower for "extra dramatic" arrival
     if (!isClosing) {
-      if (progress < 1) setProgress(Math.min(1, progress + delta / TRANSITION_DURATION));
+      if (progress < 1) setProgress(Math.min(1, progress + delta * speed));
     } else {
-      if (progress > 0) setProgress(Math.max(0, progress - delta / TRANSITION_DURATION));
-      else onDismiss();
+      if (progress > 0) {
+        setProgress(Math.max(0, progress - delta * (speed * 1.4)));
+      } else {
+        onDismiss();
+      }
     }
 
-    const t = isClosing ? Math.pow(progress, 3) : 1 - Math.pow(1 - progress, 3);
+    // High-precision easing
+    const t = isClosing 
+      ? Math.pow(progress, 2.5) 
+      : 1 - Math.pow(1 - progress, 5);
 
-    // Target position is exactly in the center of the camera's view
-    const targetPos = new THREE.Vector3(0, 0, -FOCUS_DIST);
+    // Target position
+    const targetPos = new THREE.Vector3(0, 0, -4.5);
     targetPos.applyQuaternion(camera.quaternion);
     targetPos.add(camera.position);
 
-    groupRef.current.position.lerpVectors(startPos.current, targetPos, t);
+    // ULTRA EXTRAVAGANT SWOOP
+    // Widened trajectory with multiple harmonics
+    const swoopIntensity = 6.0;
+    const spiralIntensity = 4.0;
     
-    const lookAtQuat = camera.quaternion.clone();
-    groupRef.current.quaternion.slerpQuaternions(startQuat.current, lookAtQuat, t);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    
+    const currentPos = new THREE.Vector3().lerpVectors(startPos, targetPos, t);
+    
+    // Add sinusoidal sway and spiral to path
+    const pathModifier = Math.sin(t * Math.PI);
+    currentPos.addScaledVector(right, pathModifier * swoopIntensity * (1 - t));
+    currentPos.addScaledVector(up, Math.cos(t * Math.PI * 0.8) * spiralIntensity * (1 - t));
 
-    // Scale from original (1.2) to responsive target
-    groupRef.current.scale.set(
-      THREE.MathUtils.lerp(1.2, targetScale.w, t),
-      THREE.MathUtils.lerp(1.2, targetScale.h, t),
-      1
-    );
+    groupRef.current.position.copy(currentPos);
+    
+    // Rotation: Unroll from wild initial to camera-aligned
+    const targetQuat = camera.quaternion.clone();
+    const currentQuat = new THREE.Quaternion().setFromEuler(initialRot).slerp(targetQuat, t);
+    groupRef.current.quaternion.copy(currentQuat);
+
+    // Scaling
+    const startScale = 1.0; 
+    const currentScale = THREE.MathUtils.lerp(startScale, finalFocusHeight, t);
+    groupRef.current.scale.set(currentScale * aspect, currentScale, 1);
   });
 
   useEffect(() => {
@@ -102,34 +124,10 @@ const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void
   }, []);
 
   return (
-    <group ref={groupRef} renderOrder={10000}>
-      {/* Front Mesh: The Photo */}
-      <mesh renderOrder={10001}>
+    <group ref={groupRef} renderOrder={9999}>
+      <mesh>
         <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial 
-          map={texture} 
-          transparent 
-          opacity={Math.min(1, progress * 1.5)} 
-          depthTest={false} 
-          depthWrite={false}
-          side={THREE.DoubleSide} 
-        />
-      </mesh>
-      
-      {/* Glow Border Mesh: High emissive for Bloom effect */}
-      <mesh position={[0, 0, -0.01]} renderOrder={10000}>
-        <planeGeometry args={[1.05, 1.05]} />
-        <meshPhysicalMaterial 
-          color={COLORS.GOLD} 
-          metalness={1.0} 
-          roughness={0.0} 
-          emissive={COLORS.GOLD} 
-          emissiveIntensity={10 * progress} // Glow builds up during transition
-          transparent
-          opacity={Math.min(1, progress * 1.5)}
-          depthTest={false}
-          depthWrite={false}
-        />
+        <meshBasicMaterial map={texture} transparent opacity={1} depthTest={false} side={THREE.DoubleSide} />
       </mesh>
     </group>
   );
@@ -157,9 +155,8 @@ const Scene: React.FC<{
   useFrame((state, delta) => {
     if (!focusedPhoto) {
       if (rotationGroupRef.current) {
-        const idleRotationSpeed = 0.06;
-        rotationGroupRef.current.rotation.y += (rotationVelocity.current + idleRotationSpeed) * delta;
-        rotationVelocity.current *= Math.pow(0.05, delta); 
+        rotationGroupRef.current.rotation.y += rotationVelocity.current * delta;
+        rotationVelocity.current *= Math.pow(0.08, delta); 
       }
       if (controlsRef.current) {
         const currentDist = controlsRef.current.getDistance();
@@ -170,12 +167,17 @@ const Scene: React.FC<{
     }
   });
 
+  const ambientIntensity = focusedPhoto ? 0.005 : 0.15;
+  const pointIntensity = focusedPhoto ? 0.02 : 0.8;
+  const spotIntensity = focusedPhoto ? 0.05 : 1.2;
+
   return (
     <>
       <PerspectiveCamera makeDefault position={[0, 5, 20]} fov={45} />
       <OrbitControls 
         ref={controlsRef}
-        autoRotate={false} 
+        autoRotate={treeState === TreeState.CHAOS && !focusedPhoto && Math.abs(rotationVelocity.current) < 0.01} 
+        autoRotateSpeed={0.5}
         enablePan={false}
         enabled={!focusedPhoto}
         maxDistance={35}
@@ -183,9 +185,11 @@ const Scene: React.FC<{
         target={[0, 6, 0]}
       />
       <color attach="background" args={[COLORS.BACKGROUND]} />
-      <ambientLight intensity={0.2} />
-      <pointLight position={[10, 10, 10]} intensity={1.5} color={COLORS.GOLD} />
-      <spotLight position={[-10, 20, 10]} angle={0.15} penumbra={1} intensity={2} color="#ffffff" castShadow />
+      
+      <ambientLight intensity={ambientIntensity} />
+      <pointLight position={[10, 10, 10]} intensity={pointIntensity} color={COLORS.GOLD} />
+      <spotLight position={[-10, 20, 10]} angle={0.15} penumbra={1} intensity={spotIntensity} color="#ffffff" castShadow />
+      
       <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
       
       <group ref={rotationGroupRef}>
@@ -217,7 +221,6 @@ const App: React.FC = () => {
   const [ready, setReady] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
   const [focusedPhoto, setFocusedPhoto] = useState<string | null>(null);
-  const [greeting, setGreeting] = useState<string>("");
   
   const cameraRef = useRef<THREE.Camera | null>(null);
   const rotationGroupRef = useRef<THREE.Group>(null!);
@@ -234,43 +237,29 @@ const App: React.FC = () => {
   };
 
   const handlePinchFocus = () => {
-    if (focusedPhoto || photos.length === 0 || !cameraRef.current || !rotationGroupRef.current) {
-      return;
-    }
+    if (focusedPhoto || photos.length === 0 || !cameraRef.current || !rotationGroupRef.current) return;
 
-    rotationGroupRef.current.updateMatrixWorld();
-
-    let nearestUrl = null;
+    let nearestUrl = null; 
     let minDist = Infinity;
 
     photos.forEach((url, index) => {
       const angle = (index * 1.5) + Math.PI;
       const h = 0.25 + (index * 0.12) % 0.55;
       const r = TREE_RADIUS_FACTOR(h);
-      const worldPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
+      const localPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
+      localPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
       
-      worldPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
-      
-      const dist = worldPos.distanceTo(cameraRef.current.position);
+      const dist = localPos.distanceTo(cameraRef.current.position);
       if (dist < minDist) {
         minDist = dist;
         nearestUrl = url;
       }
     });
 
-    if (nearestUrl) {
+    if (nearestUrl && minDist < 25) { 
       setFocusedPhoto(nearestUrl);
     }
   };
-
-  useEffect(() => {
-    if (focusedPhoto) {
-      setGreeting("Decrypting emerald cosmic frequencies...");
-      generateGreeting("Honored Guest").then(res => setGreeting(res));
-    } else {
-      setGreeting("");
-    }
-  }, [focusedPhoto]);
 
   return (
     <div className="h-screen w-screen bg-[#000502] overflow-hidden relative">
@@ -294,24 +283,22 @@ const App: React.FC = () => {
       </div>
 
       <HandController 
-        onGestureChaos={() => {
-          if (treeState !== TreeState.CHAOS) setTreeState(TreeState.CHAOS);
-        }}
-        onGestureForm={() => {
-          if (treeState !== TreeState.FORMED) setTreeState(TreeState.FORMED);
-        }}
+        onGestureChaos={() => setTreeState(TreeState.CHAOS)}
+        onGestureForm={() => setTreeState(TreeState.FORMED)}
         onDrag={(dx) => {
           if (!focusedPhoto) {
-            const sensitivity = 12.0;
+            const sensitivity = 11.31;
             if (rotationGroupRef.current) rotationGroupRef.current.rotation.y += dx * sensitivity;
             rotationVelocity.current = dx * 18.0; 
           }
         }}
         onZoom={(dy) => {
-          if (!focusedPhoto) zoomTarget.current = Math.max(10, Math.min(35, zoomTarget.current + dy * 6));
+          if (!focusedPhoto) zoomTarget.current = Math.max(10, Math.min(35, zoomTarget.current + dy * 5));
         }}
         onDoublePinch={handleDoublePinch}
         onPinch={handlePinchFocus} 
+        isFocusActive={!!focusedPhoto}
+        onPinchSwipeDismiss={() => window.dispatchEvent(new Event('dismiss-photo'))}
       />
 
       <OverlayUI 
@@ -320,7 +307,6 @@ const App: React.FC = () => {
         onPhotoUpload={handlePhotoUpload}
         isPhotoFocused={!!focusedPhoto}
         onClearFocus={() => window.dispatchEvent(new Event('dismiss-photo'))}
-        greeting={greeting}
       />
 
       {!ready && (

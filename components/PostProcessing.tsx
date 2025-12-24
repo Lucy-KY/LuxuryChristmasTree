@@ -4,17 +4,16 @@ import { EffectComposer, Bloom, Vignette, Noise, ChromaticAberration } from '@re
 
 const PostProcessing: React.FC = () => {
   return (
-    // Fix: Replaced the non-existent 'disableNormalPass' with 'enableNormalPass={false}' as suggested by the error message.
     <EffectComposer enableNormalPass={false}>
       <Bloom 
-        intensity={1.5} 
-        luminanceThreshold={0.4} 
+        intensity={0.25} // Minimal intensity to eliminate distortion/blur on photos
+        luminanceThreshold={0.7} // Very high threshold to keep standard colors untouched
         luminanceSmoothing={0.9} 
         mipmapBlur 
       />
-      <Vignette eskil={false} offset={0.1} darkness={1.1} />
-      <Noise opacity={0.02} />
-      <ChromaticAberration offset={[0.001, 0.001]} />
+      <Vignette eskil={false} offset={0.2} darkness={1.4} />
+      <Noise opacity={0.01} />
+      <ChromaticAberration offset={[0.0004, 0.0004]} />
     </EffectComposer>
   );
 };

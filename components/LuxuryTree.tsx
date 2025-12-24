@@ -1,10 +1,23 @@
 
 import React, { useMemo, useRef, useEffect, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, ThreeElements } from '@react-three/fiber';
 import * as THREE from 'three';
 import { TreeState, OrnamentData } from '../types';
 import { COLORS, PARTICLE_COUNTS, TREE_PARAMS } from '../constants';
 import { Float, useTexture } from '@react-three/drei';
+
+// Fix: Robust JSX augmentation to ensure Three.js intrinsic elements are recognized
+// across different React and TypeScript configurations (targeting both global JSX and React.JSX).
+declare global {
+  namespace JSX {
+    interface IntrinsicElements extends ThreeElements {}
+  }
+  namespace React {
+    namespace JSX {
+      interface IntrinsicElements extends ThreeElements {}
+    }
+  }
+}
 
 interface LuxuryTreeProps {
   state: TreeState;
@@ -30,6 +43,7 @@ const StarTopGeometry = () => {
     }
     return s;
   }, []);
+  // Fix: Standard Three.js extrudeGeometry is now correctly typed via the IntrinsicElements augmentation.
   return <extrudeGeometry args={[shape, { depth: 0.2, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05 }]} />;
 };
 
@@ -342,6 +356,12 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       });
     }
 
+    const rotSpeed = 0.06;
+    pointsRef.current.rotation.y += delta * rotSpeed;
+    trunkRef.current.rotation.y += delta * rotSpeed;
+    ribbonPointsRef.current.rotation.y += delta * rotSpeed;
+    snowBaseRef.current.rotation.y += delta * rotSpeed;
+    if (ornamentsGroupRef.current) ornamentsGroupRef.current.rotation.y += delta * rotSpeed;
     if (starRef.current) starRef.current.rotation.y += delta * 1.5;
   });
 
@@ -589,15 +609,10 @@ const PhotoOrnament: React.FC<{ url: string; index: number; isFocused: boolean; 
   }, [index]);
 
   return (
-    <group 
-      position={data.position} 
-      userData={data} 
-      visible={!isFocused} 
-      onClick={(e) => { e.stopPropagation(); onSelect(); }}
-    >
+    <group position={data.position} userData={data} visible={!isFocused} onClick={(e) => { e.stopPropagation(); onSelect(); }}>
        <mesh>
         <planeGeometry args={[1.2, 1.2]} />
-        <meshBasicMaterial map={texture} side={THREE.DoubleSide} transparent opacity={1} />
+        <meshBasicMaterial map={texture} side={THREE.DoubleSide} transparent opacity={0.96} />
       </mesh>
       <mesh scale={[1.25, 1.25, 1]} position={[0, 0, -0.015]}>
         <planeGeometry args={[1.1, 1.1]} />
