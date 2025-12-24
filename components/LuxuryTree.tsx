@@ -342,12 +342,6 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       });
     }
 
-    const rotSpeed = 0.06;
-    pointsRef.current.rotation.y += delta * rotSpeed;
-    trunkRef.current.rotation.y += delta * rotSpeed;
-    ribbonPointsRef.current.rotation.y += delta * rotSpeed;
-    snowBaseRef.current.rotation.y += delta * rotSpeed;
-    if (ornamentsGroupRef.current) ornamentsGroupRef.current.rotation.y += delta * rotSpeed;
     if (starRef.current) starRef.current.rotation.y += delta * 1.5;
   });
 
@@ -595,10 +589,15 @@ const PhotoOrnament: React.FC<{ url: string; index: number; isFocused: boolean; 
   }, [index]);
 
   return (
-    <group position={data.position} userData={data} visible={!isFocused} onClick={(e) => { e.stopPropagation(); onSelect(); }}>
+    <group 
+      position={data.position} 
+      userData={data} 
+      visible={!isFocused} 
+      onClick={(e) => { e.stopPropagation(); onSelect(); }}
+    >
        <mesh>
         <planeGeometry args={[1.2, 1.2]} />
-        <meshBasicMaterial map={texture} side={THREE.DoubleSide} transparent opacity={0.96} />
+        <meshBasicMaterial map={texture} side={THREE.DoubleSide} transparent opacity={1} />
       </mesh>
       <mesh scale={[1.25, 1.25, 1]} position={[0, 0, -0.015]}>
         <planeGeometry args={[1.1, 1.1]} />
