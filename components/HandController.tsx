@@ -209,10 +209,13 @@ const HandController: React.FC<HandControllerProps> = ({
     // Trigger Initial Pinch Events
     if (pinchingNow && !isPinchingRef.current) {
       const now = Date.now();
+      console.log('[HandController] pinch start', { pinchingNow, isFocusActive, x: currentX, y: currentY });
       if (now - lastPinchTimeRef.current < 450) {
+        console.log('[HandController] double pinch -> onDoublePinch');
         onDoublePinch();
         lastPinchTimeRef.current = 0;
       } else {
+        console.log('[HandController] single pinch -> onPinch');
         onPinch();
         lastPinchTimeRef.current = now;
       }

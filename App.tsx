@@ -236,13 +236,47 @@ const App: React.FC = () => {
     }
   };
 
-  const handlePinchFocus = () => {
-    if (focusedPhoto || photos.length === 0 || !cameraRef.current || !rotationGroupRef.current) return;
+  const isFetchingSamplesRef = useRef(false);
+  const fetchSamplePhotos = async (): Promise<string[]> => {
+    if (isFetchingSamplesRef.current) return [];
+    isFetchingSamplesRef.current = true;
+    try {
+      const sampleCount = 6;
+      const samples = Array.from({ length: sampleCount }, (_, i) => `https://picsum.photos/seed/luxury-${i}/1024/1024`);
+      setPhotos(prev => [...prev, ...samples]);
+      console.log('[App] sample photos injected', samples);
+      return samples;
+    } catch (err) {
+      console.error('[App] failed to fetch sample photos', err);
+      return [];
+    } finally {
+      isFetchingSamplesRef.current = false;
+    }
+  };
 
-    let nearestUrl = null; 
+  const handlePinchFocus = async () => {
+    console.log('[App] handlePinchFocus called', { focusedPhoto, photoCount: photos.length, hasCamera: !!cameraRef.current, hasRotation: !!rotationGroupRef.current });
+    if (focusedPhoto || !cameraRef.current || !rotationGroupRef.current) {
+      console.log('[App] handlePinchFocus aborted early', { focusedPhoto, photoCount: photos.length, hasCamera: !!cameraRef.current, hasRotation: !!rotationGroupRef.current });
+      return;
+    }
+
+    let workingPhotos = photos;
+
+    if (workingPhotos.length === 0) {
+      console.log('[App] no photos present — loading sample photos');
+      const samples = await fetchSamplePhotos();
+      if (samples.length === 0) {
+        console.log('[App] no samples could be loaded; aborting pinch focus');
+        return;
+      }
+      workingPhotos = samples;
+    }
+
+    let nearestUrl: string | null = null;
     let minDist = Infinity;
 
-    photos.forEach((url, index) => {
+    workingPhotos.forEach((url, index) => {
       const angle = (index * 1.5) + Math.PI;
       const h = 0.25 + (index * 0.12) % 0.55;
       const r = TREE_RADIUS_FACTOR(h);
@@ -250,13 +284,16 @@ const App: React.FC = () => {
       localPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
       
       const dist = localPos.distanceTo(cameraRef.current.position);
+      console.log('[App] photo', { index, url, dist });
       if (dist < minDist) {
         minDist = dist;
         nearestUrl = url;
       }
     });
 
-    if (nearestUrl && minDist < 25) { 
+    console.log('[App] nearest selection', { nearestUrl, minDist });
+    if (nearestUrl && minDist < 25) {
+      console.log('[App] focusing photo', nearestUrl); 
       setFocusedPhoto(nearestUrl);
     }
   };
