@@ -7,8 +7,8 @@ interface HandControllerProps {
   onGestureForm: () => void;
   onDrag: (dx: number) => void;
   onZoom: (dy: number) => void;
-  onDoublePinch: () => void;
   onPinch: () => void;
+  onDoublePinch: () => void;
   isFocusActive: boolean;
   onPinchSwipeDismiss: () => void;
 }
@@ -18,8 +18,8 @@ const HandController: React.FC<HandControllerProps> = ({
   onGestureForm, 
   onDrag, 
   onZoom, 
-  onDoublePinch,
   onPinch,
+  onDoublePinch,
   isFocusActive,
   onPinchSwipeDismiss
 }) => {
@@ -33,8 +33,11 @@ const HandController: React.FC<HandControllerProps> = ({
   
   // Gesture state tracking
   const isPinchingRef = useRef<boolean>(false);
-  const pinchStartXRef = useRef<number | null>(null);
+  // pinch swipe removed per request; keep stabilization counters
+  const pinchFramesRef = useRef<number>(0);
+  const pinchLostRef = useRef<number>(0);
   const lastPinchTimeRef = useRef<number>(0);
+  const pinchStartXRef = useRef<number | null>(null);
   
   const STABILITY_THRESHOLD = 5; 
   const dualOpenFramesRef = useRef<number>(0);
@@ -112,23 +115,36 @@ const HandController: React.FC<HandControllerProps> = ({
     const hands = results.landmarks;
     
     const isFist = (h: any[]) => {
+      // If thumb and index are in tight contact, prefer pinch over fist
+      const pinchDist = Math.hypot(h[4].x - h[8].x, h[4].y - h[8].y);
+      if (pinchDist < 0.05) return false;
+
       const fingers = [8, 12, 16, 20];
       const bases = [5, 9, 13, 17];
+      // Use tighter threshold to avoid misclassifying pinching frames as fists
       return fingers.every((tip, idx) => {
-        const dist = Math.sqrt(Math.pow(h[tip].x - h[bases[idx]].x, 2) + Math.pow(h[tip].y - h[bases[idx]].y, 2));
-        return dist < 0.11; 
+        const dist = Math.hypot(h[tip].x - h[bases[idx]].x, h[tip].y - h[bases[idx]].y);
+        return dist < 0.12; 
       });
     };
 
     const isPinch = (h: any[]) => {
-      const pinchDist = Math.sqrt(Math.pow(h[4].x - h[8].x, 2) + Math.pow(h[4].y - h[8].y, 2));
-      if (pinchDist > 0.05) return false;
+      // Require tighter thumb-index contact and ensure other fingers are not tightly closed (avoid fist confusion)
+      const pinchDist = Math.hypot(h[4].x - h[8].x, h[4].y - h[8].y);
+      if (pinchDist > 0.04) return false; // stricter
+
       const others = [12, 16, 20];
       const othersBases = [9, 13, 17];
-      return others.every((tip, idx) => {
-        const d = Math.sqrt(Math.pow(h[tip].x - h[othersBases[idx]].x, 2) + Math.pow(h[tip].y - h[othersBases[idx]].y, 2));
-        return d < 0.13;
-      });
+      const othersAvg = others.reduce((acc, tip, idx) => {
+        const d = Math.hypot(h[tip].x - h[othersBases[idx]].x, h[tip].y - h[othersBases[idx]].y);
+        return acc + d;
+      }, 0) / others.length;
+
+      // If other fingers are very close to their bases, it's probably a fist, not a deliberate pinch
+      if (othersAvg < 0.065) return false;
+
+      console.log('[HandController] pinch metrics', { pinchDist: pinchDist.toFixed(4), othersAvg: othersAvg.toFixed(4) });
+      return true;
     };
 
     const isOpen = (h: any[]) => {
@@ -158,13 +174,26 @@ const HandController: React.FC<HandControllerProps> = ({
 
     const activeHand = hands[0];
     const fistNow = isFist(activeHand);
-    const pinchingNow = !fistNow && isPinch(activeHand);
+    const pinchCandidate = isPinch(activeHand);
+
+    // Maintain a short stabilization counter for pinch detection
+    if (pinchCandidate) {
+      pinchFramesRef.current++;
+      pinchLostRef.current = 0;
+    } else {
+      pinchFramesRef.current = Math.max(0, pinchFramesRef.current - 1);
+      pinchLostRef.current++;
+    }
+
+    // Only treat as pinching when candidate is stable for several frames and not a fist
+    const pinchingNow = (!fistNow) && (pinchFramesRef.current >= 3);
     
     // Use the index finger tip for swipe detection as it's more stable during pinch
     const currentX = activeHand[8].x;
     const currentY = activeHand[8].y;
 
-    if (!pinchingNow) {
+    // Only clear pinchStartXRef if pinch has been lost for a few frames (avoid flicker during movement)
+    if (pinchLostRef.current > 2) {
       pinchStartXRef.current = null;
     }
 
@@ -183,19 +212,7 @@ const HandController: React.FC<HandControllerProps> = ({
         fistStateFramesRef.current = 0;
         if (pinchingNow) {
           setGestureStatus('pinch');
-          
-          // PINCH-SWIPE DISMISS LOGIC: If pinch is held and moved horizontally
-          if (isFocusActive) {
-            if (pinchStartXRef.current === null) {
-              pinchStartXRef.current = currentX;
-            } else {
-              const horizontalDelta = Math.abs(currentX - pinchStartXRef.current);
-              if (horizontalDelta > 0.14) { // Increased sensitivity for easier "throw"
-                onPinchSwipeDismiss();
-                pinchStartXRef.current = null; // Prevent multi-triggering
-              }
-            }
-          }
+          // No pinch-movement dismiss behavior (user requested deletion of pinch movement).
         } else if (isOpen(activeHand)) {
           if (Math.abs(dx) > Math.abs(dy)) onDrag(-dx);
           else onZoom(dy * 1.5);
@@ -206,16 +223,15 @@ const HandController: React.FC<HandControllerProps> = ({
       }
     }
 
-    // Trigger Initial Pinch Events
+    // Trigger Initial Pinch / Double-Pinch Events when stabilized
     if (pinchingNow && !isPinchingRef.current) {
       const now = Date.now();
-      console.log('[HandController] pinch start', { pinchingNow, isFocusActive, x: currentX, y: currentY });
       if (now - lastPinchTimeRef.current < 450) {
         console.log('[HandController] double pinch -> onDoublePinch');
         onDoublePinch();
         lastPinchTimeRef.current = 0;
       } else {
-        console.log('[HandController] single pinch -> onPinch');
+        console.log('[HandController] single pinch -> onPinch', { pinchFrames: pinchFramesRef.current, isFocusActive, x: currentX, y: currentY });
         onPinch();
         lastPinchTimeRef.current = now;
       }
@@ -225,7 +241,6 @@ const HandController: React.FC<HandControllerProps> = ({
     lastYRef.current = currentY;
     isPinchingRef.current = pinchingNow;
   };
-
   const drawWireframe = (ctx: CanvasRenderingContext2D, landmarks: any[][]) => {
     let strokeColor = '#FFD700';
     if (gestureStatus === 'pinch') strokeColor = '#fef08a';

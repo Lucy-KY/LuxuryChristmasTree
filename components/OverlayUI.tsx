@@ -13,9 +13,25 @@ interface OverlayUIProps {
 }
 
 const OverlayUI: React.FC<OverlayUIProps> = ({ treeState, onToggleState, onPhotoUpload, isPhotoFocused, onClearFocus, greeting }) => {
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    // Try to upload to /api/upload (expects FormData 'file')
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const resp = await fetch('/api/upload', { method: 'POST', body: fd });
+      if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
+      const json = await resp.json();
+      if (json && json.url) {
+        console.log('[OverlayUI] uploaded ornament url', json.url);
+        onPhotoUpload(json.url);
+        return;
+      }
+      throw new Error('Invalid response');
+    } catch (err) {
+      console.error('[OverlayUI] upload error, falling back to local object url', err);
       const url = URL.createObjectURL(file);
       onPhotoUpload(url);
     }

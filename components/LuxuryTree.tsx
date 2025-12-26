@@ -369,6 +369,9 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
     onReady();
   }, [onReady]);
 
+  // If server-provided photos exist at startup, force ornaments to be visible even while transition is 0
+  const ornamentScale = (photos && photos.length > 0) ? 1 : transition;
+
   return (
     <group>
       <points ref={pointsRef}>
@@ -402,7 +405,7 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
         <pointsMaterial size={0.05} color="#ffffff" transparent opacity={0.95} blending={THREE.AdditiveBlending} />
       </points>
 
-      <group ref={ornamentsGroupRef} scale={[transition, transition, transition]} visible={transition > 0.1}>
+      <group ref={ornamentsGroupRef} scale={[ornamentScale, ornamentScale, ornamentScale]} visible={ornamentScale > 0.01}>
         {ornaments.map((orn) => (
           <Ornament key={orn.id} data={orn} />
         ))}

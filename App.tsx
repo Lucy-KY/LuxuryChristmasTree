@@ -75,46 +75,75 @@ const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void
       if (progress > 0) {
         setProgress(Math.max(0, progress - delta * (speed * 1.4)));
       } else {
+        // Snap back to the ornament's current world position to guarantee accuracy before dismiss
+        try {
+          if (treeRef.current) {
+            const angle = (index * 1.5) + Math.PI;
+            const h = 0.25 + (index * 0.12) % 0.55;
+            const r = TREE_RADIUS_FACTOR(h);
+            const finalPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
+            finalPos.applyMatrix4(treeRef.current.matrixWorld);
+            groupRef.current.position.copy(finalPos);
+            // ensure scale and rotation are normalized
+            groupRef.current.scale.set(1, 1, 1);
+            groupRef.current.quaternion.set(0, 0, 0, 1);
+          }
+        } catch (e) {
+          // ignore
+        }
         onDismiss();
       }
     }
 
-    // High-precision easing
-    const t = isClosing 
-      ? Math.pow(progress, 2.5) 
-      : 1 - Math.pow(1 - progress, 5);
-
-    // Target position
-    const targetPos = new THREE.Vector3(0, 0, -4.5);
-    targetPos.applyQuaternion(camera.quaternion);
-    targetPos.add(camera.position);
+    // Target position (camera-space)
+    const targetPos = new THREE.Vector3(0, 0, -4.5).applyQuaternion(camera.quaternion).add(camera.position);
 
     // ULTRA EXTRAVAGANT SWOOP
-    // Widened trajectory with multiple harmonics
     const swoopIntensity = 6.0;
     const spiralIntensity = 4.0;
-    
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
-    
-    const currentPos = new THREE.Vector3().lerpVectors(startPos, targetPos, t);
-    
-    // Add sinusoidal sway and spiral to path
-    const pathModifier = Math.sin(t * Math.PI);
-    currentPos.addScaledVector(right, pathModifier * swoopIntensity * (1 - t));
-    currentPos.addScaledVector(up, Math.cos(t * Math.PI * 0.8) * spiralIntensity * (1 - t));
 
-    groupRef.current.position.copy(currentPos);
-    
-    // Rotation: Unroll from wild initial to camera-aligned
-    const targetQuat = camera.quaternion.clone();
-    const currentQuat = new THREE.Quaternion().setFromEuler(initialRot).slerp(targetQuat, t);
-    groupRef.current.quaternion.copy(currentQuat);
+    const startScale = 1.0;
 
-    // Scaling
-    const startScale = 1.0; 
-    const currentScale = THREE.MathUtils.lerp(startScale, finalFocusHeight, t);
-    groupRef.current.scale.set(currentScale * aspect, currentScale, 1);
+    if (!isClosing) {
+      // Opening path (startPos -> targetPos)
+      const tOpen = 1 - Math.pow(1 - progress, 5);
+      const currentPos = new THREE.Vector3().lerpVectors(startPos, targetPos, tOpen);
+      const pathModifier = Math.sin(tOpen * Math.PI);
+      currentPos.addScaledVector(right, pathModifier * swoopIntensity * (1 - tOpen));
+      currentPos.addScaledVector(up, Math.cos(tOpen * Math.PI * 0.8) * spiralIntensity * (1 - tOpen));
+      groupRef.current.position.copy(currentPos);
+
+      // Rotation toward camera
+      const targetQuat = camera.quaternion.clone();
+      const currentQuat = new THREE.Quaternion().setFromEuler(initialRot).slerp(targetQuat, tOpen);
+      groupRef.current.quaternion.copy(currentQuat);
+
+      // Scale up
+      const currentScale = THREE.MathUtils.lerp(startScale, finalFocusHeight, tOpen);
+      groupRef.current.scale.set(currentScale * aspect, currentScale, 1);
+    } else {
+      // Closing path (targetPos -> startPos) with reversed, smoother easing
+      const tClose = 1 - Math.pow(progress, 2.5); // 0 -> 1 as we close
+      const currentPos = new THREE.Vector3().lerpVectors(targetPos, startPos, tClose);
+
+      // reverse-sway that eases out as we approach the tree
+      const pathModifier = Math.sin(tClose * Math.PI);
+      currentPos.addScaledVector(right, pathModifier * swoopIntensity * (1 - tClose) * -0.6);
+      currentPos.addScaledVector(up, Math.cos(tClose * Math.PI * 0.8) * spiralIntensity * (1 - tClose) * -0.6);
+      groupRef.current.position.copy(currentPos);
+
+      // Rotation: camera-aligned -> initial wild rotation
+      const cameraQuat = camera.quaternion.clone();
+      const targetQuatBack = new THREE.Quaternion().setFromEuler(initialRot);
+      const currentQuat = cameraQuat.slerp(targetQuatBack, tClose);
+      groupRef.current.quaternion.copy(currentQuat);
+
+      // Scale down back to original
+      const currentScale = THREE.MathUtils.lerp(finalFocusHeight, startScale, tClose);
+      groupRef.current.scale.set(currentScale * aspect, currentScale, 1);
+    }
   });
 
   useEffect(() => {
@@ -228,31 +257,56 @@ const App: React.FC = () => {
   const zoomTarget = useRef<number>(20);
 
   const toggleTree = () => setTreeState(prev => prev === TreeState.CHAOS ? TreeState.FORMED : TreeState.CHAOS);
-  const handlePhotoUpload = (url: string) => setPhotos(prev => [...prev, url]);
-
-  const handleDoublePinch = () => {
-    if (focusedPhoto) {
-      window.dispatchEvent(new Event('dismiss-photo'));
-    }
+  const handlePhotoUpload = (url: string) => {
+    console.log('[App] handlePhotoUpload called', { url, beforeCount: photos.length });
+    setPhotos(prev => {
+      const next = [...prev, url];
+      console.log('[App] photos state will be', next.length);
+      return next;
+    });
   };
 
-  const isFetchingSamplesRef = useRef(false);
-  const fetchSamplePhotos = async (): Promise<string[]> => {
-    if (isFetchingSamplesRef.current) return [];
-    isFetchingSamplesRef.current = true;
-    try {
-      const sampleCount = 6;
-      const samples = Array.from({ length: sampleCount }, (_, i) => `https://picsum.photos/seed/luxury-${i}/1024/1024`);
-      setPhotos(prev => [...prev, ...samples]);
-      console.log('[App] sample photos injected', samples);
-      return samples;
-    } catch (err) {
-      console.error('[App] failed to fetch sample photos', err);
-      return [];
-    } finally {
-      isFetchingSamplesRef.current = false;
-    }
-  };
+  // Debug: track photos updates
+  useEffect(() => {
+    console.log('[App] photos updated', photos);
+  }, [photos]);
+
+  // Load uploaded pictures from server on mount. These are treated as session-only decorations.
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const resp = await fetch('/api/pictures');
+        if (!resp.ok) throw new Error('Failed to list pictures');
+        const list: string[] = await resp.json();
+        if (mounted && Array.isArray(list) && list.length > 0) {
+          console.log('[App] fetched pictures from server', list);
+          setPhotos(list);
+        }
+      } catch (err) {
+        console.log('[App] could not fetch /api/pictures (server may be down), continuing with in-memory photos');
+      }
+    };
+    load();
+
+    const clearOnUnload = () => {
+      try {
+        // Try keepalive DELETE; fallback to POST clear endpoint using sendBeacon if not supported
+        if (typeof navigator !== 'undefined' && 'sendBeacon' in navigator) {
+          // sendBeacon only supports POST; hit a clear endpoint for reliability
+          navigator.sendBeacon('/api/pictures/clear');
+        } else {
+          fetch('/api/pictures', { method: 'DELETE', keepalive: true }).catch(()=>{});
+        }
+      } catch (e) { /* ignore */ }
+    };
+
+    window.addEventListener('pagehide', clearOnUnload);
+    window.addEventListener('beforeunload', clearOnUnload);
+    return () => { mounted = false; window.removeEventListener('pagehide', clearOnUnload); window.removeEventListener('beforeunload', clearOnUnload); };
+  }, []);
+
+
 
   const handlePinchFocus = async () => {
     console.log('[App] handlePinchFocus called', { focusedPhoto, photoCount: photos.length, hasCamera: !!cameraRef.current, hasRotation: !!rotationGroupRef.current });
@@ -261,40 +315,84 @@ const App: React.FC = () => {
       return;
     }
 
+    // If our in-memory photos are empty, try a quick server re-fetch before giving up (covers race conditions)
     let workingPhotos = photos;
-
     if (workingPhotos.length === 0) {
-      console.log('[App] no photos present — loading sample photos');
-      const samples = await fetchSamplePhotos();
-      if (samples.length === 0) {
-        console.log('[App] no samples could be loaded; aborting pinch focus');
-        return;
+      try {
+        const resp = await fetch('/api/pictures');
+        if (resp.ok) {
+          const list: string[] = await resp.json();
+          if (Array.isArray(list) && list.length > 0) {
+            console.log('[App] discovered server-side pictures on pinch; updating state', list);
+            setPhotos(list);
+            workingPhotos = list;
+          }
+        }
+      } catch (err) {
+        console.log('[App] error fetching /api/pictures during pinch', err);
       }
-      workingPhotos = samples;
+
+      if (workingPhotos.length === 0) {
+        // brief grace window to allow in-flight uploads to finish and update component state
+        console.log('[App] no photos found immediately; waiting briefly for in-flight uploads');
+        await new Promise(res => setTimeout(res, 250));
+        if (photos.length > 0) {
+          console.log('[App] photos were added during wait; using updated photos', photos);
+          workingPhotos = photos;
+        }
+
+        if (workingPhotos.length === 0) {
+          console.log('[App] no photos present — pinch does nothing');
+          return;
+        }
+      }
     }
 
+    // Choose the photo nearest to the camera's view (screen-space closest to center). Fallback to nearest by world distance.
     let nearestUrl: string | null = null;
-    let minDist = Infinity;
+    let bestNdcDist = Infinity;
+    let bestWorldDist = Infinity;
 
     workingPhotos.forEach((url, index) => {
       const angle = (index * 1.5) + Math.PI;
       const h = 0.25 + (index * 0.12) % 0.55;
       const r = TREE_RADIUS_FACTOR(h);
-      const localPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
-      localPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
-      
-      const dist = localPos.distanceTo(cameraRef.current.position);
-      console.log('[App] photo', { index, url, dist });
-      if (dist < minDist) {
-        minDist = dist;
+      const worldPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
+      worldPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
+
+      const proj = worldPos.clone().project(cameraRef.current as any);
+      const ndcDist = Math.hypot(proj.x, proj.y);
+      const worldDist = worldPos.distanceTo(cameraRef.current.position);
+
+      console.log('[App] photo projection', { index, url, ndcX: proj.x.toFixed(3), ndcY: proj.y.toFixed(3), ndcZ: proj.z.toFixed(3), ndcDist: ndcDist.toFixed(3), worldDist: worldDist.toFixed(2) });
+
+      // Prefer visible objects (within NDC z range) and minimize screen distance
+      if (Math.abs(proj.z) <= 1 && ndcDist < bestNdcDist) {
+        bestNdcDist = ndcDist;
+        bestWorldDist = worldDist;
+        nearestUrl = url;
+      } else if (!nearestUrl && worldDist < bestWorldDist) {
+        // fallback to nearest by world distance if nothing was in view yet
+        bestWorldDist = worldDist;
         nearestUrl = url;
       }
     });
 
-    console.log('[App] nearest selection', { nearestUrl, minDist });
-    if (nearestUrl && minDist < 25) {
-      console.log('[App] focusing photo', nearestUrl); 
+    console.log('[App] nearest selection (screen focus)', { nearestUrl, bestNdcDist, bestWorldDist });
+
+    // Accept if the chosen candidate is reasonably centered or sufficiently close in world space
+    if (nearestUrl && (bestNdcDist < 0.6 || bestWorldDist < 18)) {
+      console.log('[App] focusing photo', nearestUrl);
       setFocusedPhoto(nearestUrl);
+    } else {
+      console.log('[App] pinch did not find a good candidate (centered or near enough)');
+    }
+  };
+
+  const handleDoublePinch = () => {
+    console.log('[App] handleDoublePinch called', { focusedPhoto });
+    if (focusedPhoto) {
+      window.dispatchEvent(new Event('dismiss-photo'));
     }
   };
 
@@ -332,8 +430,8 @@ const App: React.FC = () => {
         onZoom={(dy) => {
           if (!focusedPhoto) zoomTarget.current = Math.max(10, Math.min(35, zoomTarget.current + dy * 5));
         }}
+        onPinch={handlePinchFocus}
         onDoublePinch={handleDoublePinch}
-        onPinch={handlePinchFocus} 
         isFocusActive={!!focusedPhoto}
         onPinchSwipeDismiss={() => window.dispatchEvent(new Event('dismiss-photo'))}
       />
