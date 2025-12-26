@@ -308,85 +308,35 @@ const App: React.FC = () => {
 
 
 
-  const handlePinchFocus = async () => {
-    console.log('[App] handlePinchFocus called', { focusedPhoto, photoCount: photos.length, hasCamera: !!cameraRef.current, hasRotation: !!rotationGroupRef.current });
+  const handlePinchFocus = () => {
+    console.log('[App] handlePinchFocus (pinch -> focus) called', { focusedPhoto, photoCount: photos.length });
     if (focusedPhoto || !cameraRef.current || !rotationGroupRef.current) {
-      console.log('[App] handlePinchFocus aborted early', { focusedPhoto, photoCount: photos.length, hasCamera: !!cameraRef.current, hasRotation: !!rotationGroupRef.current });
+      console.log('[App] handlePinchFocus aborted', { focusedPhoto });
       return;
     }
 
-    // If our in-memory photos are empty, try a quick server re-fetch before giving up (covers race conditions)
-    let workingPhotos = photos;
-    if (workingPhotos.length === 0) {
-      try {
-        const resp = await fetch('/api/pictures');
-        if (resp.ok) {
-          const list: string[] = await resp.json();
-          if (Array.isArray(list) && list.length > 0) {
-            console.log('[App] discovered server-side pictures on pinch; updating state', list);
-            setPhotos(list);
-            workingPhotos = list;
-          }
-        }
-      } catch (err) {
-        console.log('[App] error fetching /api/pictures during pinch', err);
-      }
-
-      if (workingPhotos.length === 0) {
-        // brief grace window to allow in-flight uploads to finish and update component state
-        console.log('[App] no photos found immediately; waiting briefly for in-flight uploads');
-        await new Promise(res => setTimeout(res, 250));
-        if (photos.length > 0) {
-          console.log('[App] photos were added during wait; using updated photos', photos);
-          workingPhotos = photos;
-        }
-
-        if (workingPhotos.length === 0) {
-          console.log('[App] no photos present — pinch does nothing');
-          return;
-        }
-      }
+    if (!photos || photos.length === 0) {
+      console.log('[App] no photos on tree — pinch does nothing');
+      return;
     }
 
-    // Choose the photo nearest to the camera's view (screen-space closest to center). Fallback to nearest by world distance.
+    // Select the photo nearest to the camera by world-space distance and then focus it (same as click)
     let nearestUrl: string | null = null;
-    let bestNdcDist = Infinity;
-    let bestWorldDist = Infinity;
+    let minDist = Infinity;
 
-    workingPhotos.forEach((url, index) => {
+    photos.forEach((url, index) => {
       const angle = (index * 1.5) + Math.PI;
       const h = 0.25 + (index * 0.12) % 0.55;
       const r = TREE_RADIUS_FACTOR(h);
-      const worldPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
-      worldPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
-
-      const proj = worldPos.clone().project(cameraRef.current as any);
-      const ndcDist = Math.hypot(proj.x, proj.y);
-      const worldDist = worldPos.distanceTo(cameraRef.current.position);
-
-      console.log('[App] photo projection', { index, url, ndcX: proj.x.toFixed(3), ndcY: proj.y.toFixed(3), ndcZ: proj.z.toFixed(3), ndcDist: ndcDist.toFixed(3), worldDist: worldDist.toFixed(2) });
-
-      // Prefer visible objects (within NDC z range) and minimize screen distance
-      if (Math.abs(proj.z) <= 1 && ndcDist < bestNdcDist) {
-        bestNdcDist = ndcDist;
-        bestWorldDist = worldDist;
-        nearestUrl = url;
-      } else if (!nearestUrl && worldDist < bestWorldDist) {
-        // fallback to nearest by world distance if nothing was in view yet
-        bestWorldDist = worldDist;
-        nearestUrl = url;
-      }
+      const localPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
+      localPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
+      const dist = localPos.distanceTo(cameraRef.current.position);
+      console.log('[App] photo distance', { index, url, dist: dist.toFixed(2) });
+      if (dist < minDist) { minDist = dist; nearestUrl = url; }
     });
 
-    console.log('[App] nearest selection (screen focus)', { nearestUrl, bestNdcDist, bestWorldDist });
-
-    // Accept if the chosen candidate is reasonably centered or sufficiently close in world space
-    if (nearestUrl && (bestNdcDist < 0.6 || bestWorldDist < 18)) {
-      console.log('[App] focusing photo', nearestUrl);
-      setFocusedPhoto(nearestUrl);
-    } else {
-      console.log('[App] pinch did not find a good candidate (centered or near enough)');
-    }
+    console.log('[App] pinch selected nearest', { nearestUrl, minDist });
+    if (nearestUrl) setFocusedPhoto(nearestUrl);
   };
 
   const handleDoublePinch = () => {
@@ -422,7 +372,7 @@ const App: React.FC = () => {
         onGestureForm={() => setTreeState(TreeState.FORMED)}
         onDrag={(dx) => {
           if (!focusedPhoto) {
-            const sensitivity = 11.31;
+            const sensitivity = 6.31;
             if (rotationGroupRef.current) rotationGroupRef.current.rotation.y += dx * sensitivity;
             rotationVelocity.current = dx * 18.0; 
           }

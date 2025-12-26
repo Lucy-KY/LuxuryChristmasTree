@@ -372,6 +372,16 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
   // If server-provided photos exist at startup, force ornaments to be visible even while transition is 0
   const ornamentScale = (photos && photos.length > 0) ? 1 : transition;
 
+  // Debug: ensure photos prop reached the tree and make ornaments visible immediately when photos arrive
+  useEffect(() => {
+    console.log('[LuxuryTree] photos updated', photos);
+    try {
+      if (ornamentsGroupRef.current && photos && photos.length > 0) {
+        ornamentsGroupRef.current.visible = true;
+      }
+    } catch (e) { /* ignore */ }
+  }, [photos]);
+
   return (
     <group>
       <points ref={pointsRef}>
@@ -610,6 +620,12 @@ const PhotoOrnament: React.FC<{ url: string; index: number; isFocused: boolean; 
       weight: 1.0 
     };
   }, [index]);
+
+  // Debug: log texture load state
+  useEffect(() => {
+    const img = (texture as any)?.image;
+    console.log('[PhotoOrnament] texture state', { url, hasImage: !!img, dims: img ? { w: img.width, h: img.height } : null });
+  }, [texture, url]);
 
   return (
     <group position={data.position} userData={data} visible={!isFocused} onClick={(e) => { e.stopPropagation(); onSelect(); }}>

@@ -42,6 +42,7 @@ const HandController: React.FC<HandControllerProps> = ({
   const STABILITY_THRESHOLD = 5; 
   const dualOpenFramesRef = useRef<number>(0);
   const fistStateFramesRef = useRef<number>(0);
+  const openFramesRef = useRef<number>(0); // consecutive open-hand frames
 
   const [isActive, setIsActive] = useState(false);
   const [gestureStatus, setGestureStatus] = useState<'none' | 'chaos' | 'form' | 'pinch' | 'pointing'>('none');
@@ -150,7 +151,10 @@ const HandController: React.FC<HandControllerProps> = ({
     const isOpen = (h: any[]) => {
       const tips = [8, 12, 16, 20];
       const wrist = h[0];
-      return tips.every(tip => Math.sqrt(Math.pow(h[tip].x - wrist.x, 2) + Math.pow(h[tip].y - wrist.y, 2)) > 0.19);
+      const dists = tips.map(tip => Math.hypot(h[tip].x - wrist.x, h[tip].y - wrist.y));
+      const avg = dists.reduce((a, b) => a + b, 0) / dists.length;
+      // Slightly stricter open-hand threshold (reduces false positives when hand is partially open)
+      return avg > 0.20;
     };
 
     if (!hands || hands.length === 0) {
@@ -181,13 +185,39 @@ const HandController: React.FC<HandControllerProps> = ({
       pinchFramesRef.current++;
       pinchLostRef.current = 0;
     } else {
-      pinchFramesRef.current = Math.max(0, pinchFramesRef.current - 1);
+      // decay faster so brief openings quickly cancel a pinch
+      pinchFramesRef.current = Math.max(0, pinchFramesRef.current - 2);
       pinchLostRef.current++;
     }
 
+    // Track consecutive open-hand frames; only clear pinch after a couple of open frames
+    if (isOpen(activeHand)) {
+      openFramesRef.current++;
+    } else {
+      openFramesRef.current = 0;
+    }
+
+    if (openFramesRef.current >= 2) {
+      if (pinchFramesRef.current > 0 || isPinchingRef.current) console.log('[HandController] open-hand -> clearing pinch state', { openFrames: openFramesRef.current });
+      pinchFramesRef.current = 0;
+      pinchLostRef.current = STABILITY_THRESHOLD;
+      isPinchingRef.current = false;
+      setGestureStatus('none');
+      pinchStartXRef.current = null;
+      lastXRef.current = null;
+      lastYRef.current = null;
+      // don't return here; continue to let open hand allow drag/zoom on same frame
+    }
+
     // Only treat as pinching when candidate is stable for several frames and not a fist
-    const pinchingNow = (!fistNow) && (pinchFramesRef.current >= 3);
+    const pinchingNow = (!fistNow) && (pinchFramesRef.current >= 2); // reduce required frames to 2 for snappier response
     
+    // If pinching now, set UI state early so tracker shows 'fetch picture'
+    if (pinchingNow) {
+      setGestureStatus('pinch');
+      console.log('[HandController] pinchingNow', { frames: pinchFramesRef.current, fistNow });
+    }
+
     // Use the index finger tip for swipe detection as it's more stable during pinch
     const currentX = activeHand[8].x;
     const currentY = activeHand[8].y;
@@ -270,7 +300,7 @@ const HandController: React.FC<HandControllerProps> = ({
       <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
         <h2 className="text-[10px] font-cinzel metallic-text tracking-widest uppercase mb-1 px-2">
           {gestureStatus === 'chaos' ? 'Release Magic' : 
-           gestureStatus === 'pinch' ? 'Pinch Control' : 
+           gestureStatus === 'pinch' ? 'Fetch Picture' : 
            gestureStatus === 'form' ? 'Forming Tree' :
            'Tracking Active'}
         </h2>
