@@ -23,6 +23,14 @@ declare global {
   }
 }
 
+// Automatically bundle every JPG in static/pictures so we don't have to hardcode paths
+const STATIC_PHOTOS = Object.values(
+  import.meta.glob<string>('./static/pictures/*.{jpg,jpeg,JPG,JPEG}', {
+    eager: true,
+    as: 'url'
+  })
+).sort();
+
 const FocusedPhoto: React.FC<{ url: string; index: number; onDismiss: () => void; treeRef: React.RefObject<THREE.Group> }> = ({ url, index, onDismiss, treeRef }) => {
   const texture = useTexture(url);
   const { camera } = useThree();
@@ -285,15 +293,31 @@ const App: React.FC = () => {
     let mounted = true;
     const load = async () => {
       try {
-        const resp = await fetch('/api/pictures');
-        if (!resp.ok) throw new Error('Failed to list pictures');
-        const list: string[] = await resp.json();
-        if (mounted && Array.isArray(list) && list.length > 0) {
-          console.log('[App] fetched pictures from server', list);
+        // const endpoints = ['./api/pictures', '/api/pictures'];
+        // let list: string[] | null = null;
+
+        // for (const url of endpoints) {
+        //   try {
+        //     const resp = await fetch(url);
+        //     if (!resp.ok) throw new Error(`status ${resp.status}`);
+        //     const parsed = await resp.json();
+        //     if (Array.isArray(parsed)) {
+        //       list = parsed;
+        //       console.log('[App] fetched pictures from server', { url, count: parsed.length });
+        //       break;
+        //     }
+        //   } catch (err) {
+        //     console.log('[App] picture fetch failed', { url, err });
+        //   }
+        // }
+        
+        // images under static/pictures are static resources
+        const list = STATIC_PHOTOS;
+        if (mounted && list && list.length > 0) {
           setPhotos(list);
         }
       } catch (err) {
-        console.log('[App] could not fetch /api/pictures (server may be down), continuing with in-memory photos');
+        console.log('[App] could not fetch pictures (server may be down), continuing with in-memory photos', err);
       }
     };
     load();

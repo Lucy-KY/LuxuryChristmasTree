@@ -276,11 +276,15 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       const baseR = TREE_PARAMS.BASE_RADIUS * Math.pow(1 - hPct, 0.85);
       const angle = Math.random() * Math.PI * 2;
       const r = baseR * 0.98;
+      const chaosAngle = Math.random() * Math.PI * 2;
+      const chaosRadius = TREE_PARAMS.BASE_RADIUS + 10 + Math.random() * 8;
+      const chaosHeight = (Math.random() - 0.25) * (TREE_PARAMS.HEIGHT * 0.8);
 
       list.push({
         id: `orn-${i}`,
         type,
         position: [Math.cos(angle) * r, y, Math.sin(angle) * r],
+        chaosPosition: [Math.cos(chaosAngle) * chaosRadius, chaosHeight, Math.sin(chaosAngle) * chaosRadius],
         color,
         weight
       });
@@ -348,10 +352,16 @@ const LuxuryTree: React.FC<LuxuryTreeProps> = ({ state, onReady, photos, focused
       ornamentsGroupRef.current.children.forEach((child, idx) => {
         const orn = child.userData as OrnamentData;
         if (orn && Array.isArray(orn.position)) {
+          const chaos = Array.isArray(orn.chaosPosition) ? orn.chaosPosition : [0, 0, 0];
+          const targetX = THREE.MathUtils.lerp(chaos[0], orn.position[0], newTransition);
+          const targetY = THREE.MathUtils.lerp(chaos[1], orn.position[1], newTransition);
+          const targetZ = THREE.MathUtils.lerp(chaos[2], orn.position[2], newTransition);
+
           const swaySpeed = (1.6 - (orn.weight || 0.5)) * 1.5;
-          const swayAmount = (1.2 - (orn.weight || 0.5)) * 0.16;
-          child.position.x = orn.position[0] + Math.sin(time * swaySpeed + idx) * swayAmount;
-          child.position.z = orn.position[2] + Math.cos(time * swaySpeed * 0.8 + idx) * swayAmount;
+          const swayAmount = (1.2 - (orn.weight || 0.5)) * 0.16 * newTransition;
+          const swayX = Math.sin(time * swaySpeed + idx) * swayAmount;
+          const swayZ = Math.cos(time * swaySpeed * 0.8 + idx) * swayAmount;
+          child.position.set(targetX + swayX, targetY, targetZ + swayZ);
         }
       });
     }
@@ -612,14 +622,19 @@ const PhotoOrnament: React.FC<{ url: string; index: number; isFocused: boolean; 
     const angle = (index * 1.5) + Math.PI;
     const h = 0.25 + (index * 0.12) % 0.55;
     const r = TREE_RADIUS_FACTOR(h);
+    const basePosition: [number, number, number] = [Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r];
+    const chaosAngle = angle + (Math.random() - 0.5) * 1.1;
+    const chaosRadius = TREE_PARAMS.BASE_RADIUS + 12 + Math.random() * 10;
+    const chaosHeight = (Math.random() * TREE_PARAMS.HEIGHT * 0.7) + 1.5;
     return {
       id: `photo-${index}`,
       type: 'photo',
-      position: [Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r],
+      position: basePosition,
+      chaosPosition: [Math.cos(chaosAngle) * chaosRadius, chaosHeight, Math.sin(chaosAngle) * chaosRadius],
       color: '#ffffff',
       weight: 1.0 
     };
-  }, [index]);
+  }, [index, url]);
 
   // Debug: log texture load state
   useEffect(() => {

@@ -8,6 +8,7 @@ export interface OrnamentData {
   id: string;
   type: 'sphere' | 'box' | 'star' | 'photo' | 'heptagram';
   position: [number, number, number];
+  chaosPosition?: [number, number, number];
   color: string;
   weight: number; // 0.1 (light) to 1.0 (heavy)
   url?: string;
