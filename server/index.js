@@ -67,10 +67,10 @@ app.get('/api/pictures', (req, res) => {
 });
 
 // Clear uploaded pictures (DELETE)
-app.delete('/api/pictures', (req, res) => {
-  clearUploads();
-  res.json({ ok: true });
-});
+// app.delete('/api/pictures', (req, res) => {
+//   clearUploads();
+//   res.json({ ok: true });
+// });
 
 // Also accept POST via navigator.sendBeacon fallback
 app.post('/api/pictures/clear', (req, res) => {
