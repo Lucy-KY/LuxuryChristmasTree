@@ -266,6 +266,15 @@ const App: React.FC = () => {
     });
   };
 
+  // 1. Create a Ref to hold the latest photos array
+  const photosRef = useRef<string[]>([]);
+
+  // 2. Sync the Ref whenever the State changes
+  useEffect(() => {
+    photosRef.current = photos;
+    console.log('[App] photos updated, ref synced:', photosRef.current);
+  }, [photos]);
+
   // Debug: track photos updates
   useEffect(() => {
     console.log('[App] photos updated', photos);
@@ -289,53 +298,88 @@ const App: React.FC = () => {
     };
     load();
 
-    const clearOnUnload = () => {
-      try {
-        // Try keepalive DELETE; fallback to POST clear endpoint using sendBeacon if not supported
-        if (typeof navigator !== 'undefined' && 'sendBeacon' in navigator) {
-          // sendBeacon only supports POST; hit a clear endpoint for reliability
-          navigator.sendBeacon('/api/pictures/clear');
-        } else {
-          fetch('/api/pictures', { method: 'DELETE', keepalive: true }).catch(()=>{});
-        }
-      } catch (e) { /* ignore */ }
-    };
+    // const clearOnUnload = () => {
+    //   try {
+    //     // Try keepalive DELETE; fallback to POST clear endpoint using sendBeacon if not supported
+    //     if (typeof navigator !== 'undefined' && 'sendBeacon' in navigator) {
+    //       // sendBeacon only supports POST; hit a clear endpoint for reliability
+    //       navigator.sendBeacon('/api/pictures/clear');
+    //     } else {
+    //       fetch('/api/pictures', { method: 'DELETE', keepalive: true }).catch(()=>{});
+    //     }
+    //   } catch (e) { /* ignore */ }
+    // };
 
-    window.addEventListener('pagehide', clearOnUnload);
-    window.addEventListener('beforeunload', clearOnUnload);
-    return () => { mounted = false; window.removeEventListener('pagehide', clearOnUnload); window.removeEventListener('beforeunload', clearOnUnload); };
+    // window.addEventListener('pagehide', clearOnUnload);
+    // window.addEventListener('beforeunload', clearOnUnload);
+    // return () => { mounted = false; window.removeEventListener('pagehide', clearOnUnload); window.removeEventListener('beforeunload', clearOnUnload); };
+    return () => { mounted = false;};
   }, []);
 
 
 
+  // const handlePinchFocus = () => {
+  //   console.log('[App] handlePinchFocus (pinch -> focus) called', { focusedPhoto, photoCount: photos.length });
+  //   if (focusedPhoto || !cameraRef.current || !rotationGroupRef.current) {
+  //     console.log('[App] handlePinchFocus aborted', { focusedPhoto });
+  //     return;
+  //   }
+
+  //   if (!photos || photos.length === 0) {
+  //     console.log('[App] no photos on tree — pinch does nothing');
+  //     return;
+  //   }
+
+  //   // Select the photo nearest to the camera by world-space distance and then focus it (same as click)
+  //   let nearestUrl: string | null = null;
+  //   let minDist = Infinity;
+
+  //   photos.forEach((url, index) => {
+  //     const angle = (index * 1.5) + Math.PI;
+  //     const h = 0.25 + (index * 0.12) % 0.55;
+  //     const r = TREE_RADIUS_FACTOR(h);
+  //     const localPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
+  //     localPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
+  //     const dist = localPos.distanceTo(cameraRef.current.position);
+  //     console.log('[App] photo distance', { index, url, dist: dist.toFixed(2) });
+  //     if (dist < minDist) { minDist = dist; nearestUrl = url; }
+  //   });
+
+  //   console.log('[App] pinch selected nearest', { nearestUrl, minDist });
+  //   if (nearestUrl) setFocusedPhoto(nearestUrl);
+  // };
+
   const handlePinchFocus = () => {
-    console.log('[App] handlePinchFocus (pinch -> focus) called', { focusedPhoto, photoCount: photos.length });
+    // 3. READ FROM THE REF, NOT THE STATE
+    const currentPhotos = photosRef.current;
+
+    console.log('[App] handlePinchFocus called', { focusedPhoto, photoCount: currentPhotos.length });
+    
+    // Check against the REF
     if (focusedPhoto || !cameraRef.current || !rotationGroupRef.current) {
-      console.log('[App] handlePinchFocus aborted', { focusedPhoto });
       return;
     }
 
-    if (!photos || photos.length === 0) {
+    if (!currentPhotos || currentPhotos.length === 0) {
       console.log('[App] no photos on tree — pinch does nothing');
       return;
     }
 
-    // Select the photo nearest to the camera by world-space distance and then focus it (same as click)
     let nearestUrl: string | null = null;
     let minDist = Infinity;
 
-    photos.forEach((url, index) => {
+    // Iterate over the REF
+    currentPhotos.forEach((url, index) => {
       const angle = (index * 1.5) + Math.PI;
       const h = 0.25 + (index * 0.12) % 0.55;
       const r = TREE_RADIUS_FACTOR(h);
       const localPos = new THREE.Vector3(Math.cos(angle) * r, h * TREE_PARAMS.HEIGHT, Math.sin(angle) * r);
       localPos.applyMatrix4(rotationGroupRef.current.matrixWorld);
-      const dist = localPos.distanceTo(cameraRef.current.position);
-      console.log('[App] photo distance', { index, url, dist: dist.toFixed(2) });
+      const dist = localPos.distanceTo(cameraRef.current!.position); // (added bang operator for safety)
+      
       if (dist < minDist) { minDist = dist; nearestUrl = url; }
     });
 
-    console.log('[App] pinch selected nearest', { nearestUrl, minDist });
     if (nearestUrl) setFocusedPhoto(nearestUrl);
   };
 
