@@ -28,6 +28,7 @@ const HandController: React.FC<HandControllerProps> = ({
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   
+  const lastGestureTimeRef = useRef<number>(0);
   const lastXRef = useRef<number | null>(null);
   const lastYRef = useRef<number | null>(null);
   
@@ -40,12 +41,13 @@ const HandController: React.FC<HandControllerProps> = ({
   const pinchStartXRef = useRef<number | null>(null);
   
   const STABILITY_THRESHOLD = 5; 
+  const COOLDOWN_MS = 5000;
   const dualOpenFramesRef = useRef<number>(0);
   const fistStateFramesRef = useRef<number>(0);
   const openFramesRef = useRef<number>(0); // consecutive open-hand frames
 
   const [isActive, setIsActive] = useState(false);
-  const [gestureStatus, setGestureStatus] = useState<'none' | 'chaos' | 'form' | 'pinch' | 'pointing'>('none');
+  const [gestureStatus, setGestureStatus] = useState<'none' | 'chaos' | 'form' | 'pinch'>('none');
 
   useEffect(() => {
     let isMounted = true;
@@ -113,26 +115,38 @@ const HandController: React.FC<HandControllerProps> = ({
   }, []);
 
   const processGestures = (results: any) => {
+    const now = Date.now();
+    if (now - lastGestureTimeRef.current < COOLDOWN_MS) {
+      setGestureStatus('none');
+      // keep sensors quiet during cooldown
+      pinchFramesRef.current = 0;
+      pinchLostRef.current = 0;
+      openFramesRef.current = 0;
+      fistStateFramesRef.current = 0;
+      dualOpenFramesRef.current = 0;
+      isPinchingRef.current = false;
+      pinchStartXRef.current = null;
+      lastXRef.current = null;
+      lastYRef.current = null;
+      return; // ignore all recognition during cooldown
+    }
+
     const hands = results.landmarks;
     
     const isFist = (h: any[]) => {
-      // If thumb and index are in tight contact, prefer pinch over fist
-      const pinchDist = Math.hypot(h[4].x - h[8].x, h[4].y - h[8].y);
-      if (pinchDist < 0.05) return false;
-
       const fingers = [8, 12, 16, 20];
       const bases = [5, 9, 13, 17];
       // Use tighter threshold to avoid misclassifying pinching frames as fists
       return fingers.every((tip, idx) => {
         const dist = Math.hypot(h[tip].x - h[bases[idx]].x, h[tip].y - h[bases[idx]].y);
-        return dist < 0.12; 
+        return dist < 0.1; 
       });
     };
 
     const isPinch = (h: any[]) => {
       // Require tighter thumb-index contact and ensure other fingers are not tightly closed (avoid fist confusion)
       const pinchDist = Math.hypot(h[4].x - h[8].x, h[4].y - h[8].y);
-      if (pinchDist > 0.04) return false; // stricter
+      if (pinchDist > 0.05) return false; // stricter
 
       const others = [12, 16, 20];
       const othersBases = [9, 13, 17];
@@ -140,9 +154,6 @@ const HandController: React.FC<HandControllerProps> = ({
         const d = Math.hypot(h[tip].x - h[othersBases[idx]].x, h[tip].y - h[othersBases[idx]].y);
         return acc + d;
       }, 0) / others.length;
-
-      // If other fingers are very close to their bases, it's probably a fist, not a deliberate pinch
-      if (othersAvg < 0.065) return false;
 
       console.log('[HandController] pinch metrics', { pinchDist: pinchDist.toFixed(4), othersAvg: othersAvg.toFixed(4) });
       return true;
@@ -171,6 +182,7 @@ const HandController: React.FC<HandControllerProps> = ({
       setGestureStatus('chaos');
       if (dualOpenFramesRef.current > STABILITY_THRESHOLD) {
         onGestureChaos();
+        lastGestureTimeRef.current = now;
         dualOpenFramesRef.current = 0;
       }
       return;
@@ -236,6 +248,7 @@ const HandController: React.FC<HandControllerProps> = ({
         fistStateFramesRef.current++;
         if (fistStateFramesRef.current > STABILITY_THRESHOLD) {
           onGestureForm();
+          lastGestureTimeRef.current = now;
           fistStateFramesRef.current = 0;
         }
       } else {
@@ -255,14 +268,15 @@ const HandController: React.FC<HandControllerProps> = ({
 
     // Trigger Initial Pinch / Double-Pinch Events when stabilized
     if (pinchingNow && !isPinchingRef.current) {
-      const now = Date.now();
       if (now - lastPinchTimeRef.current < 450) {
         console.log('[HandController] double pinch -> onDoublePinch');
         onDoublePinch();
+        lastGestureTimeRef.current = now;
         lastPinchTimeRef.current = 0;
       } else {
         console.log('[HandController] single pinch -> onPinch', { pinchFrames: pinchFramesRef.current, isFocusActive, x: currentX, y: currentY });
         onPinch();
+        lastGestureTimeRef.current = now;
         lastPinchTimeRef.current = now;
       }
     }
@@ -270,7 +284,28 @@ const HandController: React.FC<HandControllerProps> = ({
     lastXRef.current = currentX;
     lastYRef.current = currentY;
     isPinchingRef.current = pinchingNow;
+
+    // --- Navigation Logic (Exactly one hand, must be OPEN) ---
+    if (hands.length === 1) {
+      const hand = hands[0];
+      const wrist = hand[0];
+
+      if (isOpen(hand)) {
+        if (lastXRef.current !== null && lastYRef.current !== null) {
+          const dx = wrist.x - lastXRef.current;
+          const dy = wrist.y - lastYRef.current;
+
+          if (Math.abs(dy) > Math.abs(dx) * 1.1) {
+            onZoom(dy * 1.5);
+          } else if (Math.abs(dx) > Math.abs(dy) * 1.1) {
+            onDrag(-dx * 1.2); 
+          }
+        }
+        setGestureStatus('none');
+      }
+    }
   };
+  
   const drawWireframe = (ctx: CanvasRenderingContext2D, landmarks: any[][]) => {
     let strokeColor = '#FFD700';
     if (gestureStatus === 'pinch') strokeColor = '#fef08a';

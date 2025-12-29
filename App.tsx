@@ -213,7 +213,7 @@ const Scene: React.FC<{
       <PerspectiveCamera makeDefault position={[0, 5, 20]} fov={45} />
       <OrbitControls 
         ref={controlsRef}
-        autoRotate={treeState === TreeState.CHAOS && !focusedPhoto && Math.abs(rotationVelocity.current) < 0.01} 
+        autoRotate={treeState === TreeState.CHAOS && Math.abs(rotationVelocity.current) < 0.01} 
         autoRotateSpeed={0.5}
         enablePan={false}
         enabled={!focusedPhoto}
@@ -293,25 +293,6 @@ const App: React.FC = () => {
     let mounted = true;
     const load = async () => {
       try {
-        // const endpoints = ['./api/pictures', '/api/pictures'];
-        // let list: string[] | null = null;
-
-        // for (const url of endpoints) {
-        //   try {
-        //     const resp = await fetch(url);
-        //     if (!resp.ok) throw new Error(`status ${resp.status}`);
-        //     const parsed = await resp.json();
-        //     if (Array.isArray(parsed)) {
-        //       list = parsed;
-        //       console.log('[App] fetched pictures from server', { url, count: parsed.length });
-        //       break;
-        //     }
-        //   } catch (err) {
-        //     console.log('[App] picture fetch failed', { url, err });
-        //   }
-        // }
-        
-        // images under static/pictures are static resources
         const list = STATIC_PHOTOS;
         if (mounted && list && list.length > 0) {
           setPhotos(list);
@@ -321,22 +302,6 @@ const App: React.FC = () => {
       }
     };
     load();
-
-    // const clearOnUnload = () => {
-    //   try {
-    //     // Try keepalive DELETE; fallback to POST clear endpoint using sendBeacon if not supported
-    //     if (typeof navigator !== 'undefined' && 'sendBeacon' in navigator) {
-    //       // sendBeacon only supports POST; hit a clear endpoint for reliability
-    //       navigator.sendBeacon('/api/pictures/clear');
-    //     } else {
-    //       fetch('/api/pictures', { method: 'DELETE', keepalive: true }).catch(()=>{});
-    //     }
-    //   } catch (e) { /* ignore */ }
-    // };
-
-    // window.addEventListener('pagehide', clearOnUnload);
-    // window.addEventListener('beforeunload', clearOnUnload);
-    // return () => { mounted = false; window.removeEventListener('pagehide', clearOnUnload); window.removeEventListener('beforeunload', clearOnUnload); };
     return () => { mounted = false;};
   }, []);
 
